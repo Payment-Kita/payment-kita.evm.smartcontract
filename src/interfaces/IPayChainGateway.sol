@@ -7,6 +7,11 @@ pragma solidity ^0.8.20;
  * @dev Base interface for all PayChain implementations
  */
 interface IPayChainGateway {
+    enum PaymentMode {
+        REGULAR,
+        PRIVACY
+    }
+
     enum PaymentStatus {
         Pending,
         Processing,
@@ -26,6 +31,29 @@ interface IPayChainGateway {
         uint256 fee;
         PaymentStatus status;
         uint256 createdAt;
+    }
+
+    struct PaymentRequestV2 {
+        bytes destChainIdBytes;
+        bytes receiverBytes;
+        address sourceToken;
+        address bridgeTokenSource;
+        address destToken;
+        uint256 amountInSource;
+        uint256 minBridgeAmountOut;
+        uint256 minDestAmountOut;
+        PaymentMode mode;
+        // Sentinel bridge option for V2 request:
+        // 255 => use default bridge mapping in gateway
+        // 0   => Hyperbridge
+        // 1   => CCIP
+        // 2   => LayerZero
+        uint8 bridgeOption;
+    }
+
+    struct PrivateRouting {
+        bytes32 intentId;
+        address stealthReceiver;
     }
 
     // ============ Events ============
@@ -111,4 +139,33 @@ interface IPayChainGateway {
     function isRequestExpired(bytes32 requestId) external view returns (bool);
     
     function retryMessage(bytes32 messageId) external;
+
+    // ============ Phase-0 V2 (non-breaking) ============
+
+    function createPaymentV2(PaymentRequestV2 calldata req) external payable returns (bytes32 paymentId);
+
+    function createPaymentPrivateV2(
+        PaymentRequestV2 calldata req,
+        PrivateRouting calldata privacy
+    ) external payable returns (bytes32 paymentId);
+
+    function createPaymentV2DefaultBridge(PaymentRequestV2 calldata req) external payable returns (bytes32 paymentId);
+
+    function quotePaymentCostV2(
+        PaymentRequestV2 calldata req
+    )
+        external
+        view
+        returns (
+            uint256 platformFee,
+            uint256 bridgeFeeNative,
+            uint256 totalSourceTokenRequired,
+            uint8 bridgeType,
+            bool bridgeQuoteOk,
+            string memory bridgeQuoteReason
+        );
+
+    function previewApprovalV2(
+        PaymentRequestV2 calldata req
+    ) external view returns (address approvalToken, uint256 approvalAmount, uint256 requiredNativeFee);
 }

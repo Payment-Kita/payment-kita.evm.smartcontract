@@ -9,9 +9,9 @@ import "../src/vaults/PayChainVault.sol";
 
 contract VerifyAllPolygonRoutes is Script {
     // Polygon Contracts
-    TokenSwapper constant swapper = TokenSwapper(0xF043b0b91C8F5b6C2DC63897f1632D6D15e199A9);
-    PayChainGateway constant gateway = PayChainGateway(0x7a4f3b606D90e72555A36cB370531638fad19Bf8);
-    TokenRegistry constant registry = TokenRegistry(0xd2C69EA4968e9F7cc8C0F447eB9b6DFdFFb1F8D7);
+    TokenSwapper constant SWAPPER = TokenSwapper(0xF043b0b91C8F5b6C2DC63897f1632D6D15e199A9);
+    PayChainGateway constant GATEWAY = PayChainGateway(0x7a4f3b606D90e72555A36cB370531638fad19Bf8);
+    TokenRegistry constant REGISTRY = TokenRegistry(0xd2C69EA4968e9F7cc8C0F447eB9b6DFdFFb1F8D7);
     
     // Polygon Tokens
     address constant USDC = 0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359;
@@ -20,16 +20,17 @@ contract VerifyAllPolygonRoutes is Script {
     address constant DAI  = 0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063;
     address constant IDRT = 0x554cd6bdD03214b10AafA3e0D4D42De0C5D2937b;
 
-    function run() external {
+    function run() external view {
+        console.log("Gateway:", address(GATEWAY));
         console.log("== Polygon Configuration Verification ==");
         
         // 1. Check Registry Supported Tokens
         console.log("== Registry Supported Tokens ==");
-        console.log("USDC Supported:", registry.isTokenSupported(USDC));
-        console.log("USDT Supported:", registry.isTokenSupported(USDT));
-        console.log("WETH Supported:", registry.isTokenSupported(WETH));
-        console.log("DAI Supported:", registry.isTokenSupported(DAI));
-        console.log("IDRT Supported:", registry.isTokenSupported(IDRT));
+        console.log("USDC Supported:", REGISTRY.isTokenSupported(USDC));
+        console.log("USDT Supported:", REGISTRY.isTokenSupported(USDT));
+        console.log("WETH Supported:", REGISTRY.isTokenSupported(WETH));
+        console.log("DAI Supported:", REGISTRY.isTokenSupported(DAI));
+        console.log("IDRT Supported:", REGISTRY.isTokenSupported(IDRT));
         
         // 2. Check Routes from USDC (Bridge Token) to others
         console.log("\n== TokenSwapper Routes ==");
@@ -44,7 +45,7 @@ contract VerifyAllPolygonRoutes is Script {
     }
 
     function checkRoute(string memory label, address tokenIn, address tokenOut) internal view {
-        (bool exists, bool isDirect, address[] memory path) = swapper.findRoute(tokenIn, tokenOut);
+        (bool exists, bool isDirect, address[] memory path) = SWAPPER.findRoute(tokenIn, tokenOut);
         
         console.log(label);
         console.log("  Route Exists:", exists);
@@ -57,7 +58,7 @@ contract VerifyAllPolygonRoutes is Script {
         
         // Also check V3 pool specifically
         bytes32 pairKey = keccak256(abi.encodePacked(tokenIn < tokenOut ? tokenIn : tokenOut, tokenIn < tokenOut ? tokenOut : tokenIn));
-        (uint24 fee, bool active) = swapper.v3Pools(pairKey);
+        (uint24 fee, bool active) = SWAPPER.v3Pools(pairKey);
         console.log("  V3 Pool Active:", active);
         if (active) {
             console.log("  V3 Fee:", fee);

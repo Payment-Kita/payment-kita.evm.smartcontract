@@ -12,7 +12,7 @@ contract RetryBaseSwapperConfig is Script {
     address constant USDC = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913;
     address constant WBTC = 0x0555E30da8f98308EdB960aa94C0Db47230d2B9c;
     address constant WETH = 0x4200000000000000000000000000000000000006;
-    address constant USDe = 0x5d3a1Ff2b6BAb83b63cd9AD0787074081a52ef34;
+    address constant US_DE = 0x5d3a1Ff2b6BAb83b63cd9AD0787074081a52ef34;
 
     function run() external {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
@@ -22,7 +22,7 @@ contract RetryBaseSwapperConfig is Script {
 
         // 1. Configure USDC <> USDe (Fee 100) - FAILED LAST TIME
         console.log("Configuring USDC <> USDe (Fee 100)...");
-        swapper.setV3Pool(USDC, USDe, 100);
+        swapper.setV3Pool(USDC, US_DE, 100);
 
         // 2. Configure Multi-hop - FAILED LAST TIME
         console.log("Configuring WBTC -> USDC -> IDRX...");
@@ -43,8 +43,8 @@ contract RetryBaseSwapperConfig is Script {
         address[] memory pathIdrxUsde = new address[](3);
         pathIdrxUsde[0] = IDRX;
         pathIdrxUsde[1] = USDC;
-        pathIdrxUsde[2] = USDe;
-        swapper.setMultiHopPath(IDRX, USDe, pathIdrxUsde);
+        pathIdrxUsde[2] = US_DE;
+        swapper.setMultiHopPath(IDRX, US_DE, pathIdrxUsde);
 
         vm.stopBroadcast();
         console.log("Retry configuration for Base TokenSwapper complete.");

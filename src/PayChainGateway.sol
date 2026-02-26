@@ -32,6 +32,9 @@ interface IVaultSwapper {
 contract PayChainGateway is IPayChainGateway, Ownable, ReentrancyGuard, Pausable {
     using FeeCalculator for uint256;
 
+    error InvalidBridgeOption(uint8 bridgeOption);
+    error BridgeRouteNotConfigured(string destChainId, uint8 bridgeType);
+
     // ============ State Variables ============
 
     PayChainVault public vault;
@@ -51,6 +54,8 @@ contract PayChainGateway is IPayChainGateway, Ownable, ReentrancyGuard, Pausable
     
     /// @notice Default bridge type for a destination chain: destChainId => bridgeType
     mapping(string => uint8) public defaultBridgeTypes;
+    /// @notice Source-side bridge token per destination lane
+    mapping(string => address) public bridgeTokenByDestCaip2;
 
     address public feeRecipient;
 
@@ -58,6 +63,10 @@ contract PayChainGateway is IPayChainGateway, Ownable, ReentrancyGuard, Pausable
     uint256 public constant FEE_RATE_BPS = 30; // 0.3%
     uint256 public constant REQUEST_EXPIRY_TIME = 15 minutes;
     uint8 public constant MAX_RETRY_ATTEMPTS = 3;
+    uint8 public constant BRIDGE_OPTION_DEFAULT = 255;
+    uint8 public constant BRIDGE_OPTION_HYPERBRIDGE = 0;
+    uint8 public constant BRIDGE_OPTION_CCIP = 1;
+    uint8 public constant BRIDGE_OPTION_LAYERZERO = 2;
 
     struct PlatformFeePolicy {
         bool enabled;
@@ -82,6 +91,7 @@ contract PayChainGateway is IPayChainGateway, Ownable, ReentrancyGuard, Pausable
     event VaultUpdated(address indexed oldVault, address indexed newVault);
     event RouterUpdated(address indexed oldRouter, address indexed newRouter);
     event DefaultBridgeTypeSet(string destChainId, uint8 bridgeType);
+    event BridgeTokenForDestSet(string destChainId, address bridgeTokenSource);
     event SourceSideSwapToggled(bool enabled);
     event PaymentRetryRequested(bytes32 indexed paymentId, bytes32 indexed previousMessageId, uint8 retryCount);
     event MessageRoutingLockUpdated(bool locked);
@@ -96,6 +106,7 @@ contract PayChainGateway is IPayChainGateway, Ownable, ReentrancyGuard, Pausable
     );
     event PlatformFeeCharged(bytes32 indexed paymentId, address indexed token, uint256 amount, address indexed recipient);
     event BridgeFeeCharged(bytes32 indexed paymentId, uint8 bridgeType, uint256 nativeAmount, uint256 tokenEquivalent);
+    event NativeFeeBufferUpdated(uint256 oldBps, uint256 newBps);
     event PaymentCostSnapshotted(
         bytes32 indexed paymentId,
         uint256 platformFeeToken,
@@ -103,6 +114,9 @@ contract PayChainGateway is IPayChainGateway, Ownable, ReentrancyGuard, Pausable
         uint256 bridgeFeeTokenEq,
         uint256 totalSourceTokenRequired
     );
+    event PrivacyPaymentCreated(bytes32 indexed paymentId, bytes32 indexed intentId, address indexed stealthReceiver);
+    event V1LaneStatusUpdated(string destChainId, bool disabled);
+    event V1GlobalStatusUpdated(bool disabled);
 
     // ============ Diagnostics ============
 
@@ -111,6 +125,11 @@ contract PayChainGateway is IPayChainGateway, Ownable, ReentrancyGuard, Pausable
 
     /// @notice Authorized receiver adapters that can call markPaymentFailed
     mapping(address => bool) public isAuthorizedAdapter;
+    uint256 public nativeFeeBufferBps = 500; // 5%
+    mapping(bytes32 => bytes32) public privacyIntentByPayment;
+    mapping(bytes32 => address) public privacyStealthByPayment;
+    mapping(string => bool) public v1DisabledByDestCaip2;
+    bool public v1DisabledGlobal;
 
     // ============ Constructor ============
 
@@ -159,6 +178,13 @@ contract PayChainGateway is IPayChainGateway, Ownable, ReentrancyGuard, Pausable
         emit DefaultBridgeTypeSet(destChainId, bridgeType);
     }
 
+    function setBridgeTokenForDest(string calldata destChainId, address bridgeTokenSource) external onlyOwner {
+        require(bridgeTokenSource != address(0), "Invalid bridge token");
+        require(tokenRegistry.isTokenSupported(bridgeTokenSource), "Bridge token not supported");
+        bridgeTokenByDestCaip2[destChainId] = bridgeTokenSource;
+        emit BridgeTokenForDestSet(destChainId, bridgeTokenSource);
+    }
+
     function setAuthorizedAdapter(address adapter, bool authorized) external onlyOwner {
         isAuthorizedAdapter[adapter] = authorized;
     }
@@ -180,6 +206,22 @@ contract PayChainGateway is IPayChainGateway, Ownable, ReentrancyGuard, Pausable
         });
 
         emit PlatformFeePolicyUpdated(enabled, perByteRate, overheadBytes, minFee, maxFee);
+    }
+
+    function setNativeFeeBufferBps(uint256 bps) external onlyOwner {
+        require(bps <= 5000, "Buffer too high");
+        emit NativeFeeBufferUpdated(nativeFeeBufferBps, bps);
+        nativeFeeBufferBps = bps;
+    }
+
+    function setV1LaneDisabled(string calldata destChainId, bool disabled) external onlyOwner {
+        v1DisabledByDestCaip2[destChainId] = disabled;
+        emit V1LaneStatusUpdated(destChainId, disabled);
+    }
+
+    function setV1GlobalDisabled(bool disabled) external onlyOwner {
+        v1DisabledGlobal = disabled;
+        emit V1GlobalStatusUpdated(disabled);
     }
 
     function quotePaymentCost(
@@ -226,7 +268,7 @@ contract PayChainGateway is IPayChainGateway, Ownable, ReentrancyGuard, Pausable
         bridgeQuoteReason = "";
 
         if (!isSameChain) {
-            bridgeType = defaultBridgeTypes[destChainId];
+            bridgeType = _resolveBridgeType(destChainId, BRIDGE_OPTION_DEFAULT);
 
             if (
                 router.bridgeModes(bridgeType) == PayChainRouter.BridgeMode.TOKEN_BRIDGE &&
@@ -274,7 +316,16 @@ contract PayChainGateway is IPayChainGateway, Ownable, ReentrancyGuard, Pausable
         address destToken,
         uint256 amount
     ) external payable override nonReentrant whenNotPaused returns (bytes32 paymentId) {
-        return _createPaymentInternal(destChainIdBytes, receiverBytes, sourceToken, destToken, amount, 0);
+        _requireV1EnabledForDest(string(destChainIdBytes));
+        return _createPaymentInternal(
+            destChainIdBytes,
+            receiverBytes,
+            sourceToken,
+            destToken,
+            amount,
+            0,
+            BRIDGE_OPTION_DEFAULT
+        );
     }
 
     /// @notice Create a cross-chain payment with slippage protection
@@ -292,18 +343,28 @@ contract PayChainGateway is IPayChainGateway, Ownable, ReentrancyGuard, Pausable
         uint256 amount,
         uint256 minAmountOut
     ) external payable override nonReentrant whenNotPaused returns (bytes32 paymentId) {
-        return _createPaymentInternal(destChainIdBytes, receiverBytes, sourceToken, destToken, amount, minAmountOut);
+        _requireV1EnabledForDest(string(destChainIdBytes));
+        return _createPaymentInternal(
+            destChainIdBytes,
+            receiverBytes,
+            sourceToken,
+            destToken,
+            amount,
+            minAmountOut,
+            BRIDGE_OPTION_DEFAULT
+        );
     }
 
     /// @notice Internal payment creation logic
     /// @dev Contains all validation and core payment flow
     function _createPaymentInternal(
-        bytes calldata destChainIdBytes,
-        bytes calldata receiverBytes,
+        bytes memory destChainIdBytes,
+        bytes memory receiverBytes,
         address sourceToken,
         address destToken,
         uint256 amount,
-        uint256 minAmountOut
+        uint256 minAmountOut,
+        uint8 bridgeOption
     ) internal returns (bytes32 paymentId) {
         // ========== Input Validation ==========
         require(amount > 0, "Amount must be > 0");
@@ -322,8 +383,7 @@ contract PayChainGateway is IPayChainGateway, Ownable, ReentrancyGuard, Pausable
 
         uint8 bridgeType = 255; // local-only marker for same-chain settlement
         if (!isSameChain) {
-            bridgeType = defaultBridgeTypes[destChainId];
-            require(router.hasAdapter(destChainId, bridgeType), "No adapter for destination");
+            bridgeType = _resolveBridgeType(destChainId, bridgeOption);
             // TOKEN_BRIDGE mode physically moves tokens — source and dest must match
             if (router.bridgeModes(bridgeType) == PayChainRouter.BridgeMode.TOKEN_BRIDGE) {
                 require(sourceToken == destToken, "TOKEN_BRIDGE requires same token");
@@ -458,6 +518,203 @@ contract PayChainGateway is IPayChainGateway, Ownable, ReentrancyGuard, Pausable
             platformFee,
             bridgeType == 0 ? "Hyperbridge" : (bridgeType == 1 ? "CCIP" : "LayerZero")
         );
+    }
+
+    // ============ Phase-0 V2 (non-breaking wrappers) ============
+
+    function createPaymentV2(PaymentRequestV2 calldata req)
+        external
+        payable
+        override
+        nonReentrant
+        whenNotPaused
+        returns (bytes32 paymentId)
+    {
+        require(req.mode == PaymentMode.REGULAR, "Use createPaymentPrivateV2 for privacy");
+        return _createPaymentV2Internal(req, req.bridgeOption, req.receiverBytes);
+    }
+
+    function createPaymentPrivateV2(
+        PaymentRequestV2 calldata req,
+        PrivateRouting calldata privacy
+    ) external payable override nonReentrant whenNotPaused returns (bytes32 paymentId) {
+        require(req.mode == PaymentMode.PRIVACY, "Invalid mode for private payment");
+        require(privacy.intentId != bytes32(0), "Missing privacy intent");
+        require(privacy.stealthReceiver != address(0), "Invalid stealth receiver");
+
+        bytes memory privateReceiverBytes = abi.encode(privacy.stealthReceiver);
+        paymentId = _createPaymentV2Internal(req, req.bridgeOption, privateReceiverBytes);
+
+        privacyIntentByPayment[paymentId] = privacy.intentId;
+        privacyStealthByPayment[paymentId] = privacy.stealthReceiver;
+        emit PrivacyPaymentCreated(paymentId, privacy.intentId, privacy.stealthReceiver);
+    }
+
+    function createPaymentV2DefaultBridge(
+        PaymentRequestV2 calldata req
+    ) external payable override nonReentrant whenNotPaused returns (bytes32 paymentId) {
+        require(req.mode == PaymentMode.REGULAR, "Use createPaymentPrivateV2 for privacy");
+        return _createPaymentV2Internal(req, BRIDGE_OPTION_DEFAULT, req.receiverBytes);
+    }
+
+    function quotePaymentCostV2(
+        PaymentRequestV2 calldata req
+    )
+        external
+        view
+        override
+        returns (
+            uint256 platformFee,
+            uint256 bridgeFeeNative,
+            uint256 totalSourceTokenRequired,
+            uint8 bridgeType,
+            bool bridgeQuoteOk,
+            string memory bridgeQuoteReason
+        )
+    {
+        require(req.amountInSource > 0, "Amount must be > 0");
+        require(req.sourceToken != address(0), "Invalid source token");
+        require(req.destChainIdBytes.length > 0, "Empty dest chain ID");
+        require(req.receiverBytes.length > 0, "Empty receiver");
+
+        string memory destChainId = string(req.destChainIdBytes);
+        string memory sourceChainId = _getChainId();
+        bool isSameChain = keccak256(bytes(destChainId)) == keccak256(bytes(sourceChainId));
+
+        uint256 payloadLength = FeeCalculator.payloadLengthForPayment(
+            req.destChainIdBytes,
+            req.receiverBytes,
+            req.sourceToken,
+            req.destToken,
+            req.amountInSource,
+            req.minDestAmountOut
+        );
+        platformFee = _calculatePlatformFee(req.amountInSource, payloadLength);
+
+        bridgeType = 255;
+        bridgeQuoteOk = true;
+        bridgeQuoteReason = "";
+
+        if (!isSameChain) {
+            bridgeType = _resolveBridgeType(destChainId, req.bridgeOption);
+            address bridgeTokenSource = _resolveBridgeTokenSource(destChainId, req.bridgeTokenSource);
+            address effectiveSourceToken = req.sourceToken;
+            uint256 effectiveAmount = req.amountInSource;
+
+            if (req.sourceToken != bridgeTokenSource) {
+                if (!enableSourceSideSwap) {
+                    bridgeQuoteOk = false;
+                    bridgeQuoteReason = "source_side_swap_disabled";
+                    totalSourceTokenRequired = req.amountInSource + platformFee;
+                    return (
+                        platformFee,
+                        0,
+                        totalSourceTokenRequired,
+                        bridgeType,
+                        bridgeQuoteOk,
+                        bridgeQuoteReason
+                    );
+                }
+                if (address(swapper) == address(0)) {
+                    bridgeQuoteOk = false;
+                    bridgeQuoteReason = "swapper_not_configured";
+                    totalSourceTokenRequired = req.amountInSource + platformFee;
+                    return (
+                        platformFee,
+                        0,
+                        totalSourceTokenRequired,
+                        bridgeType,
+                        bridgeQuoteOk,
+                        bridgeQuoteReason
+                    );
+                }
+
+                (bool routeExists,,) = swapper.findRoute(req.sourceToken, bridgeTokenSource);
+                if (!routeExists) {
+                    bridgeQuoteOk = false;
+                    bridgeQuoteReason = "no_route_to_bridge_token";
+                    totalSourceTokenRequired = req.amountInSource + platformFee;
+                    return (
+                        platformFee,
+                        0,
+                        totalSourceTokenRequired,
+                        bridgeType,
+                        bridgeQuoteOk,
+                        bridgeQuoteReason
+                    );
+                }
+
+                try swapper.getQuote(req.sourceToken, bridgeTokenSource, req.amountInSource) returns (uint256 quotedBridgeAmount) {
+                    effectiveSourceToken = bridgeTokenSource;
+                    effectiveAmount = quotedBridgeAmount;
+                } catch {
+                    bridgeQuoteOk = false;
+                    bridgeQuoteReason = "source_swap_quote_failed";
+                    totalSourceTokenRequired = req.amountInSource + platformFee;
+                    return (
+                        platformFee,
+                        0,
+                        totalSourceTokenRequired,
+                        bridgeType,
+                        bridgeQuoteOk,
+                        bridgeQuoteReason
+                    );
+                }
+            } else {
+                effectiveSourceToken = bridgeTokenSource;
+            }
+
+            if (
+                router.bridgeModes(bridgeType) == PayChainRouter.BridgeMode.TOKEN_BRIDGE &&
+                effectiveSourceToken != req.destToken
+            ) {
+                bridgeQuoteOk = false;
+                bridgeQuoteReason = "TOKEN_BRIDGE requires same token";
+                totalSourceTokenRequired = req.amountInSource + platformFee;
+                return (
+                    platformFee,
+                    0,
+                    totalSourceTokenRequired,
+                    bridgeType,
+                    bridgeQuoteOk,
+                    bridgeQuoteReason
+                );
+            }
+
+            IBridgeAdapter.BridgeMessage memory message = IBridgeAdapter.BridgeMessage({
+                paymentId: bytes32(0),
+                receiver: abi.decode(req.receiverBytes, (address)),
+                sourceToken: effectiveSourceToken,
+                destToken: req.destToken,
+                amount: effectiveAmount,
+                destChainId: destChainId,
+                minAmountOut: req.minDestAmountOut,
+                payer: address(0)
+            });
+
+            (bridgeQuoteOk, bridgeFeeNative, bridgeQuoteReason) = router.quotePaymentFeeSafe(
+                destChainId,
+                bridgeType,
+                message
+            );
+        }
+
+        totalSourceTokenRequired = req.amountInSource + platformFee;
+    }
+
+    function previewApprovalV2(
+        PaymentRequestV2 calldata req
+    ) external view override returns (address approvalToken, uint256 approvalAmount, uint256 requiredNativeFee) {
+        approvalToken = req.sourceToken;
+        (
+            uint256 platformFee,
+            uint256 bridgeFeeNative,
+            ,
+            ,
+            ,
+        ) = this.quotePaymentCostV2(req);
+        approvalAmount = req.amountInSource + platformFee;
+        requiredNativeFee = _applyNativeFeeBuffer(bridgeFeeNative);
     }
 
     function _routeWithStoredMessage(bytes32 paymentId, uint256 nativeFeeValue) internal {
@@ -629,6 +886,188 @@ contract PayChainGateway is IPayChainGateway, Ownable, ReentrancyGuard, Pausable
         }
 
         return amount.calculatePlatformFee(FIXED_BASE_FEE, FEE_RATE_BPS);
+    }
+
+    function _resolveBridgeType(string memory destChainId, uint8 bridgeOption) internal view returns (uint8 bridgeType) {
+        if (bridgeOption == BRIDGE_OPTION_DEFAULT) {
+            bridgeType = defaultBridgeTypes[destChainId];
+        } else if (
+            bridgeOption == BRIDGE_OPTION_HYPERBRIDGE ||
+            bridgeOption == BRIDGE_OPTION_CCIP ||
+            bridgeOption == BRIDGE_OPTION_LAYERZERO
+        ) {
+            bridgeType = bridgeOption;
+        } else {
+            revert InvalidBridgeOption(bridgeOption);
+        }
+
+        if (!router.hasAdapter(destChainId, bridgeType)) {
+            revert BridgeRouteNotConfigured(destChainId, bridgeType);
+        }
+    }
+
+    function _resolveBridgeTokenSource(string memory destChainId, address requestBridgeToken) internal view returns (address) {
+        address resolved = requestBridgeToken;
+        if (resolved == address(0)) {
+            resolved = bridgeTokenByDestCaip2[destChainId];
+        }
+        require(resolved != address(0), "Bridge token not configured");
+        require(tokenRegistry.isTokenSupported(resolved), "Bridge token not supported");
+        return resolved;
+    }
+
+    function _createPaymentV2Internal(
+        PaymentRequestV2 calldata req,
+        uint8 bridgeOption,
+        bytes memory receiverBytes
+    ) internal returns (bytes32 paymentId) {
+        require(req.amountInSource > 0, "Amount must be > 0");
+        require(req.sourceToken != address(0), "Invalid source token");
+        require(req.destChainIdBytes.length > 0, "Empty dest chain ID");
+        require(receiverBytes.length > 0, "Empty receiver");
+        require(tokenRegistry.isTokenSupported(req.sourceToken), "Source token not supported");
+
+        string memory destChainId = string(req.destChainIdBytes);
+        string memory sourceChainId = _getChainId();
+        bool isSameChain = keccak256(bytes(destChainId)) == keccak256(bytes(sourceChainId));
+
+        // Same-chain keeps existing behavior for compatibility.
+        if (isSameChain) {
+            return _createPaymentInternal(
+                req.destChainIdBytes,
+                receiverBytes,
+                req.sourceToken,
+                req.destToken,
+                req.amountInSource,
+                req.minDestAmountOut,
+                bridgeOption
+            );
+        }
+
+        address receiver = abi.decode(receiverBytes, (address));
+        require(receiver != address(0), "Invalid receiver address");
+
+        uint8 bridgeType = _resolveBridgeType(destChainId, bridgeOption);
+        address bridgeTokenSource = _resolveBridgeTokenSource(destChainId, req.bridgeTokenSource);
+
+        uint256 payloadLength = FeeCalculator.payloadLengthForPayment(
+            req.destChainIdBytes,
+            receiverBytes,
+            req.sourceToken,
+            req.destToken,
+            req.amountInSource,
+            req.minDestAmountOut
+        );
+        uint256 platformFee = _calculatePlatformFee(req.amountInSource, payloadLength);
+        uint256 totalAmount = req.amountInSource + platformFee;
+
+        // Pull user funds and collect platform fee in source token first.
+        vault.pullTokens(req.sourceToken, msg.sender, totalAmount);
+        vault.pushTokens(req.sourceToken, feeRecipient, platformFee);
+
+        paymentId = PaymentLib.calculatePaymentId(
+            msg.sender,
+            receiver,
+            destChainId,
+            req.sourceToken,
+            req.amountInSource,
+            block.timestamp
+        );
+
+        payments[paymentId] = Payment({
+            sender: msg.sender,
+            receiver: receiver,
+            sourceChainId: sourceChainId,
+            destChainId: destChainId,
+            sourceToken: req.sourceToken,
+            destToken: req.destToken,
+            amount: req.amountInSource,
+            fee: platformFee,
+            status: PaymentStatus.Processing,
+            createdAt: block.timestamp
+        });
+
+        uint256 bridgedAmount = req.amountInSource;
+        address bridgedSourceToken = req.sourceToken;
+        if (bridgedSourceToken != bridgeTokenSource) {
+            require(enableSourceSideSwap, "Source-side swap disabled");
+            require(address(swapper) != address(0), "Swapper not configured");
+            (bool exists,,) = swapper.findRoute(bridgedSourceToken, bridgeTokenSource);
+            require(exists, "No route to bridge token");
+
+            bridgedAmount = IVaultSwapper(address(swapper)).swapFromVault(
+                bridgedSourceToken,
+                bridgeTokenSource,
+                req.amountInSource,
+                req.minBridgeAmountOut,
+                address(vault)
+            );
+            bridgedSourceToken = bridgeTokenSource;
+        } else {
+            bridgedSourceToken = bridgeTokenSource;
+        }
+
+        if (
+            router.bridgeModes(bridgeType) == PayChainRouter.BridgeMode.TOKEN_BRIDGE &&
+            bridgedSourceToken != req.destToken
+        ) {
+            revert("TOKEN_BRIDGE requires same token");
+        }
+
+        IBridgeAdapter.BridgeMessage memory bridgeMessage = IBridgeAdapter.BridgeMessage({
+            paymentId: paymentId,
+            receiver: receiver,
+            sourceToken: bridgedSourceToken,
+            destToken: req.destToken,
+            amount: bridgedAmount,
+            destChainId: destChainId,
+            minAmountOut: req.minDestAmountOut,
+            payer: msg.sender
+        });
+        paymentMessages[paymentId] = bridgeMessage;
+        paymentBridgeType[paymentId] = bridgeType;
+
+        (bool quoteOk, uint256 requiredNativeFee, string memory quoteReason) = router.quotePaymentFeeSafe(
+            destChainId,
+            bridgeType,
+            bridgeMessage
+        );
+        require(quoteOk, quoteReason);
+        require(msg.value >= requiredNativeFee, "Insufficient native fee");
+
+        paymentCostSnapshots[paymentId] = PaymentCostSnapshot({
+            platformFeeToken: platformFee,
+            bridgeFeeNative: msg.value,
+            bridgeFeeTokenEq: 0,
+            totalSourceTokenRequired: totalAmount
+        });
+        emit PaymentCostSnapshotted(paymentId, platformFee, msg.value, 0, totalAmount);
+        emit PlatformFeeCharged(paymentId, req.sourceToken, platformFee, feeRecipient);
+        emit BridgeFeeCharged(paymentId, bridgeType, msg.value, 0);
+
+        _routeWithStoredMessage(paymentId, msg.value);
+
+        emit PaymentCreated(
+            paymentId,
+            msg.sender,
+            receiver,
+            destChainId,
+            req.sourceToken,
+            req.destToken,
+            req.amountInSource,
+            platformFee,
+            bridgeType == 0 ? "Hyperbridge" : (bridgeType == 1 ? "CCIP" : "LayerZero")
+        );
+    }
+
+    function _applyNativeFeeBuffer(uint256 fee) internal view returns (uint256) {
+        if (fee == 0 || nativeFeeBufferBps == 0) return fee;
+        return fee + ((fee * nativeFeeBufferBps) / 10_000);
+    }
+
+    function _requireV1EnabledForDest(string memory destChainId) internal view {
+        require(!v1DisabledGlobal, "V1 globally disabled");
+        require(!v1DisabledByDestCaip2[destChainId], "V1 disabled for destination");
     }
     
     function _getChainId() internal view returns (string memory) {

@@ -119,8 +119,12 @@ contract HyperbridgeSender is IBridgeAdapter, HyperApp, Ownable {
     }
 
     modifier onlyRouter() {
-        if (msg.sender != router) revert NotRouter();
+        _onlyRouter();
         _;
+    }
+
+    function _onlyRouter() internal view {
+        if (msg.sender != router) revert NotRouter();
     }
 
     // ============ Admin Functions ============

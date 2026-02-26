@@ -9,12 +9,16 @@ contract PolygonFeeRepro is Test {
     PayChainRouter router = PayChainRouter(0xb4a911eC34eDaaEFC393c52bbD926790B9219df4);
     string destChainId = "eip155:8453";
     uint8 bridgeType = 0; // Hyperbridge
+    bool runForkRepro;
 
     function setUp() public {
+        runForkRepro = vm.envOr("RUN_POLYGON_FEE_REPRO", false);
+        if (!runForkRepro) return;
         vm.createSelectFork("https://polygon-bor.publicnode.com");
     }
 
-    function test_repro_quotePaymentFee() public {
+    function test_repro_quotePaymentFee() public view {
+        if (!runForkRepro) return;
         IBridgeAdapter.BridgeMessage memory message = IBridgeAdapter.BridgeMessage({
             paymentId: bytes32(uint256(1)),
             receiver: address(0x01),

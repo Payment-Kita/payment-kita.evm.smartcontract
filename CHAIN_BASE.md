@@ -5,14 +5,25 @@ PayChainRouter deployed at: 0x1d7550079DAe36f55F4999E0B24AC037D092249C
 PayChainGateway deployed at: 0xC696dCAC9369fD26AB37d116C54cC2f19B156e4D
 TokenSwapper deployed at: 0x6E331897BCa189678cd60E966F1b1c94517E946E (V3 - Support Reset Pair & Multi-hop)
 -> Correct Checksummed Address for Viem: 0x6E331897BCa189678cd60E966F1b1c94517E946E
-CCIPSender deployed at: 0xc60b6f567562c756bE5E29f31318bb7793852850
-CCIPReceiverAdapter deployed at: 0x95C8aF513D4a898B125A3EE4a34979ef127Ef1c1
+CCIPSender deployed at: 0xEBCca0174587A52317598954De902A1bd1869158 (Active, rotated, verified)
+CCIPReceiverAdapter deployed at: 0xe0b381d2fD3135b810e4792f5f29eB95ebFB8bC9 (Active, rotated, verified)
+CCIPSender (old): 0xc60b6f567562c756bE5E29f31318bb7793852850
+CCIPReceiverAdapter (old): 0x95C8aF513D4a898B125A3EE4a34979ef127Ef1c1
 HyperbridgeSender deployed at: 0x48c8A8C1Bb988CFf5F865356c0d823FBD819C34A (Verified)
 HyperbridgeReceiver deployed at: 0xf4348E2e6AF1860ea9Ab0F3854149582b608b5e2
 LayerZeroSenderAdapter deployed at: 0x54A139b53eA67Aa59a60Adc353B4C6fC3a00b3D6 (Active, rotated)
 LayerZeroReceiverAdapter deployed at: 0xDa17664D9cdD9524D8c1583a84325FBB5a1cFDA8 (Active, rotated)
 LayerZeroSenderAdapter (old): 0xD37f7315ea96eD6b3539dFc4bc87368D9F2b7478
 LayerZeroReceiverAdapter (old): 0x4864138d5Dc8a5bcFd4228D7F784D1F32859986f
+
+# CCIP ROUTE STATUS (Base -> Polygon)
+Route CAIP2: eip155:137
+Bridge type: 1 (CCIP)
+Sender chainSelector: 4051577828743386545
+Sender destinationAdapter (Polygon receiver): 0xbC75055BdF937353721BFBa9Dd1DCCFD0c70B8dd
+Receiver sourceSelector trusted sender (Polygon sender): 0xdf6c1dFEf6A16315F6Be460114fB090Aea4dE500
+Gateway default bridge for eip155:137: 1 (CCIP)
+Validation: ccip-rotate-verify passed (deploy + rewire + verify)
 
 # LAYERZERO ROUTE STATUS (Base -> Polygon)
 Route CAIP2: eip155:137

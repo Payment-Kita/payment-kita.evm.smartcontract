@@ -203,12 +203,12 @@ contract RotateLayerZeroAdapters is Script {
         return keccak256(bytes(a)) == keccak256(bytes(b));
     }
 
-    function _parseBytes32OrZero(string memory value) internal returns (bytes32) {
+    function _parseBytes32OrZero(string memory value) internal pure returns (bytes32) {
         if (bytes(value).length == 0) return bytes32(0);
         return vm.parseBytes32(value);
     }
 
-    function _parseBytesOrEmpty(string memory value) internal returns (bytes memory) {
+    function _parseBytesOrEmpty(string memory value) internal pure returns (bytes memory) {
         if (bytes(value).length == 0) return bytes("");
         return vm.parseBytes(value);
     }

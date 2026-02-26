@@ -247,6 +247,7 @@ contract PayChainGatewayTest is Test {
         ccipRouterMock.setQuotedFee(1e14);
 
         uint256 amount = 1e18;
+        vm.prank(user);
         require(token.transfer(address(vault), amount), "fund vault failed");
 
         IBridgeAdapter.BridgeMessage memory message = IBridgeAdapter.BridgeMessage({
@@ -270,6 +271,7 @@ contract PayChainGatewayTest is Test {
         ccipRouterMock.setQuotedFee(1e14);
 
         uint256 amount = 1e18;
+        vm.prank(user);
         require(token.transfer(address(vault), amount), "fund vault failed");
 
         IBridgeAdapter.BridgeMessage memory message = IBridgeAdapter.BridgeMessage({
@@ -295,6 +297,7 @@ contract PayChainGatewayTest is Test {
         ccipRouterMock.setChainSupported(false);
 
         uint256 amount = 1e18;
+        vm.prank(user);
         require(token.transfer(address(vault), amount), "fund vault failed");
 
         IBridgeAdapter.BridgeMessage memory message = IBridgeAdapter.BridgeMessage({
@@ -315,9 +318,11 @@ contract PayChainGatewayTest is Test {
 
     function testCCIPSenderRevertsWhenMsgValueProvidedForFeeTokenRoute() public {
         ccipRouterMock.setQuotedFee(1e14);
+        vm.prank(ccipSender.owner());
         ccipSender.setDestinationFeeToken(DEST_CHAIN, address(token));
 
         uint256 amount = 1e18;
+        vm.prank(user);
         require(token.transfer(address(vault), amount), "fund vault failed");
 
         IBridgeAdapter.BridgeMessage memory message = IBridgeAdapter.BridgeMessage({
@@ -487,7 +492,13 @@ contract PayChainGatewayTest is Test {
         vm.startPrank(user);
         token.approve(address(vault), 101 * 10**18);
 
-        vm.expectRevert(bytes("No adapter for destination"));
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                PayChainGateway.BridgeRouteNotConfigured.selector,
+                "eip155:42161",
+                uint8(0)
+            )
+        );
         gateway.createPayment(
             bytes("eip155:42161"),
             abi.encode(merchant),

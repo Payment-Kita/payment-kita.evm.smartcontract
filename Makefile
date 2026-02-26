@@ -15,6 +15,9 @@
 	rotate-lz-dry rotate-lz-broadcast rotate-lz-verify rotate-lz \
 	lz-validate-dry \
 	ccip-validate-dry \
+	set-bridge-token-dry set-bridge-token-broadcast check-bridge-token \
+	set-v1-status-dry set-v1-status-broadcast check-v1-status \
+	validate-gateway-v2-dry \
 	ccip-rotate-dry ccip-rotate-broadcast ccip-rotate-verify ccip-rotate
 
 VERBOSITY ?= -vvvv
@@ -82,6 +85,19 @@ help:
 	@echo ""
 	@echo "CCIP path validation gate:"
 	@echo "  make ccip-validate-dry        - requires BASE_RPC_URL + CCIP_VALIDATE_* env"
+	@echo ""
+	@echo "Bridge token lane config (Phase 1 V2 normalization):"
+	@echo "  make set-bridge-token-dry      - requires BRIDGE_TOKEN_* env"
+	@echo "  make set-bridge-token-broadcast"
+	@echo "  make check-bridge-token"
+	@echo ""
+	@echo "Gateway V1 rollout status (Phase 5/6):"
+	@echo "  make set-v1-status-dry         - requires GATEWAY_V1_STATUS_* env"
+	@echo "  make set-v1-status-broadcast"
+	@echo "  make check-v1-status"
+	@echo ""
+	@echo "Gateway V2 readiness gate (Phase 7):"
+	@echo "  make validate-gateway-v2-dry   - requires GW_VALIDATE_* env"
 	@echo ""
 	@echo "CCIP adapter rotation (deploy sender+receiver baru, register+auth+trust):"
 	@echo "  make ccip-rotate-dry          - profile-based (CCIP_ROTATE_PROFILE)"
@@ -365,6 +381,78 @@ lz-validate-dry:
 ccip-validate-dry:
 	@test -n "$(BASE_RPC_URL)" || (echo "Missing BASE_RPC_URL" && exit 1)
 	@forge script script/ValidateCCIPPath.s.sol:ValidateCCIPPath \
+		--rpc-url $(BASE_RPC_URL) \
+		$(VERBOSITY)
+
+set-bridge-token-dry:
+	@test -n "$(PRIVATE_KEY)" || (echo "Missing PRIVATE_KEY" && exit 1)
+	@test -n "$(BASE_RPC_URL)" || (echo "Missing BASE_RPC_URL" && exit 1)
+	@test -n "$(BRIDGE_TOKEN_GATEWAY)" || (echo "Missing BRIDGE_TOKEN_GATEWAY" && exit 1)
+	@test -n "$(BRIDGE_TOKEN_DEST_CAIP2)" || (echo "Missing BRIDGE_TOKEN_DEST_CAIP2" && exit 1)
+	@test -n "$(BRIDGE_TOKEN_SOURCE_TOKEN)" || (echo "Missing BRIDGE_TOKEN_SOURCE_TOKEN" && exit 1)
+	@forge script script/SetBridgeTokenForDest.s.sol:SetBridgeTokenForDest \
+		--rpc-url $(BASE_RPC_URL) \
+		--private-key $(PRIVATE_KEY) \
+		$(VERBOSITY)
+
+set-bridge-token-broadcast:
+	@test -n "$(PRIVATE_KEY)" || (echo "Missing PRIVATE_KEY" && exit 1)
+	@test -n "$(BASE_RPC_URL)" || (echo "Missing BASE_RPC_URL" && exit 1)
+	@test -n "$(BRIDGE_TOKEN_GATEWAY)" || (echo "Missing BRIDGE_TOKEN_GATEWAY" && exit 1)
+	@test -n "$(BRIDGE_TOKEN_DEST_CAIP2)" || (echo "Missing BRIDGE_TOKEN_DEST_CAIP2" && exit 1)
+	@test -n "$(BRIDGE_TOKEN_SOURCE_TOKEN)" || (echo "Missing BRIDGE_TOKEN_SOURCE_TOKEN" && exit 1)
+	@forge script script/SetBridgeTokenForDest.s.sol:SetBridgeTokenForDest \
+		--rpc-url $(BASE_RPC_URL) \
+		--private-key $(PRIVATE_KEY) \
+		--broadcast \
+		$(VERBOSITY) $(SLOW)
+
+check-bridge-token:
+	@test -n "$(BASE_RPC_URL)" || (echo "Missing BASE_RPC_URL" && exit 1)
+	@test -n "$(BRIDGE_TOKEN_GATEWAY)" || (echo "Missing BRIDGE_TOKEN_GATEWAY" && exit 1)
+	@test -n "$(BRIDGE_TOKEN_DEST_CAIP2)" || (echo "Missing BRIDGE_TOKEN_DEST_CAIP2" && exit 1)
+	@forge script script/CheckBridgeTokenForDest.s.sol:CheckBridgeTokenForDest \
+		--rpc-url $(BASE_RPC_URL) \
+		$(VERBOSITY)
+
+set-v1-status-dry:
+	@test -n "$(PRIVATE_KEY)" || (echo "Missing PRIVATE_KEY" && exit 1)
+	@test -n "$(BASE_RPC_URL)" || (echo "Missing BASE_RPC_URL" && exit 1)
+	@test -n "$(GATEWAY_V1_STATUS_GATEWAY)" || (echo "Missing GATEWAY_V1_STATUS_GATEWAY" && exit 1)
+	@test -n "$(GATEWAY_V1_STATUS_MODE)" || (echo "Missing GATEWAY_V1_STATUS_MODE" && exit 1)
+	@forge script script/SetGatewayV1Status.s.sol:SetGatewayV1Status \
+		--rpc-url $(BASE_RPC_URL) \
+		--private-key $(PRIVATE_KEY) \
+		$(VERBOSITY)
+
+set-v1-status-broadcast:
+	@test -n "$(PRIVATE_KEY)" || (echo "Missing PRIVATE_KEY" && exit 1)
+	@test -n "$(BASE_RPC_URL)" || (echo "Missing BASE_RPC_URL" && exit 1)
+	@test -n "$(GATEWAY_V1_STATUS_GATEWAY)" || (echo "Missing GATEWAY_V1_STATUS_GATEWAY" && exit 1)
+	@test -n "$(GATEWAY_V1_STATUS_MODE)" || (echo "Missing GATEWAY_V1_STATUS_MODE" && exit 1)
+	@forge script script/SetGatewayV1Status.s.sol:SetGatewayV1Status \
+		--rpc-url $(BASE_RPC_URL) \
+		--private-key $(PRIVATE_KEY) \
+		--broadcast \
+		$(VERBOSITY) $(SLOW)
+
+check-v1-status:
+	@test -n "$(BASE_RPC_URL)" || (echo "Missing BASE_RPC_URL" && exit 1)
+	@test -n "$(GATEWAY_V1_STATUS_GATEWAY)" || (echo "Missing GATEWAY_V1_STATUS_GATEWAY" && exit 1)
+	@forge script script/CheckGatewayV1Status.s.sol:CheckGatewayV1Status \
+		--rpc-url $(BASE_RPC_URL) \
+		$(VERBOSITY)
+
+validate-gateway-v2-dry:
+	@test -n "$(BASE_RPC_URL)" || (echo "Missing BASE_RPC_URL" && exit 1)
+	@test -n "$(GW_VALIDATE_GATEWAY)" || (echo "Missing GW_VALIDATE_GATEWAY" && exit 1)
+	@test -n "$(GW_VALIDATE_ROUTER)" || (echo "Missing GW_VALIDATE_ROUTER" && exit 1)
+	@test -n "$(GW_VALIDATE_DEST_CAIP2)" || (echo "Missing GW_VALIDATE_DEST_CAIP2" && exit 1)
+	@test -n "$(GW_VALIDATE_SOURCE_TOKEN)" || (echo "Missing GW_VALIDATE_SOURCE_TOKEN" && exit 1)
+	@test -n "$(GW_VALIDATE_DEST_TOKEN)" || (echo "Missing GW_VALIDATE_DEST_TOKEN" && exit 1)
+	@test -n "$(GW_VALIDATE_RECEIVER)" || (echo "Missing GW_VALIDATE_RECEIVER" && exit 1)
+	@test -n "$(GW_VALIDATE_AMOUNT)" || (echo "Missing GW_VALIDATE_AMOUNT" && exit 1)
+	@forge script script/ValidateGatewayV2Readiness.s.sol:ValidateGatewayV2Readiness \
 		--rpc-url $(BASE_RPC_URL) \
 		$(VERBOSITY)
 

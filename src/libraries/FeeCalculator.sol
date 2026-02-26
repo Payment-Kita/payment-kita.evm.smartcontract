@@ -53,8 +53,8 @@ library FeeCalculator {
      * @dev This mirrors payment intent fields, not bridge-specific encoded payload bytes.
      */
     function payloadLengthForPayment(
-        bytes calldata destChainIdBytes,
-        bytes calldata receiverBytes,
+        bytes memory destChainIdBytes,
+        bytes memory receiverBytes,
         address /* sourceToken */,
         address /* destToken */,
         uint256 /* amount */,

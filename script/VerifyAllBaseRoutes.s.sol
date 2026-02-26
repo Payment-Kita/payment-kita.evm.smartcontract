@@ -11,8 +11,8 @@ contract VerifyAllBaseRoutes is Script {
     address constant USDC = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913;
     address constant WBTC = 0x0555E30da8f98308EdB960aa94C0Db47230d2B9c;
     address constant WETH = 0x4200000000000000000000000000000000000006;
-    address constant cbBTC = 0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf;
-    address constant USDe = 0x5d3a1Ff2b6BAb83b63cd9AD0787074081a52ef34;
+    address constant CB_BTC = 0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf;
+    address constant US_DE = 0x5d3a1Ff2b6BAb83b63cd9AD0787074081a52ef34;
 
     TokenSwapper swapper;
 
@@ -23,13 +23,13 @@ contract VerifyAllBaseRoutes is Script {
         
         checkRoute("USDC -> WBTC", USDC, WBTC);
         checkRoute("USDC -> WETH", USDC, WETH);
-        checkRoute("USDC -> cbBTC", USDC, cbBTC);
-        checkRoute("USDC -> USDe", USDC, USDe);
+        checkRoute("USDC -> cbBTC", USDC, CB_BTC);
+        checkRoute("USDC -> USDe", USDC, US_DE);
         
         checkRoute("IDRX -> USDC", IDRX, USDC);
         checkRoute("IDRX -> WBTC", IDRX, WBTC);
         checkRoute("IDRX -> WETH", IDRX, WETH);
-        checkRoute("IDRX -> USDe", IDRX, USDe);
+        checkRoute("IDRX -> USDe", IDRX, US_DE);
     }
 
     function checkRoute(string memory label, address tokenIn, address tokenOut) internal view {

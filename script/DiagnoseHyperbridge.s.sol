@@ -27,16 +27,15 @@ contract DiagnoseHyperbridge is Script {
         address quoter = swapper.quoterV3();
         console.log("Swapper QuoterV3:", quoter);
         
-        address weth = swapper.bridgeToken(); // Wait, bridgeToken is usually USDC? 
         // Let's check Uniswap V2 Router WETH
         address v2Router = sender.swapRouter();
         if (v2Router == address(0)) {
              v2Router = 0x4752ba5DBc23f44D87826276BF6Fd6b1C372aD24; // Default used in my deploy script
         }
-        address WETH = IUniswapV2Router02HB(v2Router).WETH();
-        console.log("WETH Address:", WETH);
+        address weth = IUniswapV2Router02HB(v2Router).WETH();
+        console.log("WETH Address:", weth);
 
-        bytes32 pairKey = keccak256(abi.encodePacked(WETH < feeToken ? WETH : feeToken, WETH < feeToken ? feeToken : WETH));
+        bytes32 pairKey = keccak256(abi.encodePacked(weth < feeToken ? weth : feeToken, weth < feeToken ? feeToken : weth));
         (uint24 feeTier, bool active) = swapper.v3Pools(pairKey);
         console.log("V3 Pool (WETH/FeeToken) Active:", active);
 
@@ -50,13 +49,13 @@ contract DiagnoseHyperbridge is Script {
 
         freshSwapper.setAuthorizedCaller(SENDER, true);
         freshSwapper.setQuoterV3(0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a);
-        freshSwapper.setV3Pool(WETH, feeToken, feeTier); // Use same pool config
+        freshSwapper.setV3Pool(weth, feeToken, feeTier); // Use same pool config
 
         console.log("Testing fresh swapper...");
-        uint256 amountOutView = freshSwapper.getQuote(WETH, feeToken, 1 ether);
+        uint256 amountOutView = freshSwapper.getQuote(weth, feeToken, 1 ether);
         console.log("Fresh Swapper getQuote(WETH -> FeeToken):", amountOutView);
 
-        try freshSwapper.getRealQuote(WETH, feeToken, 1 ether) returns (uint256 amountOutReal) {
+        try freshSwapper.getRealQuote(weth, feeToken, 1 ether) returns (uint256 amountOutReal) {
             console.log("Fresh Swapper getRealQuote(WETH -> FeeToken):", amountOutReal);
         } catch {
             console.log("Fresh Swapper getRealQuote FAILED");

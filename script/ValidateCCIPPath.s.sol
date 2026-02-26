@@ -16,6 +16,11 @@ interface IRouterCCIPValidate {
 
 interface IGatewayCCIPValidate {
     function defaultBridgeTypes(string calldata destChainId) external view returns (uint8);
+    function isAuthorizedAdapter(address adapter) external view returns (bool);
+}
+
+interface IVaultCCIPValidate {
+    function authorizedSpenders(address spender) external view returns (bool);
 }
 
 interface ICCIPSenderValidate {
@@ -37,6 +42,7 @@ contract ValidateCCIPPath is Script {
     struct ValidateConfig {
         address router;
         address gateway;
+        address vault;
         string destCaip2;
         uint8 bridgeType;
         bool strict;
@@ -104,6 +110,18 @@ contract ValidateCCIPPath is Script {
             if (cfg.strict) require(defaultBridge == cfg.bridgeType, "CCIP validate: default bridge mismatch");
         }
 
+        if (cfg.vault != address(0)) {
+            bool senderVaultAuthorized = IVaultCCIPValidate(cfg.vault).authorizedSpenders(sender);
+            console.log("sender vault authorized:", senderVaultAuthorized);
+            if (cfg.strict) require(senderVaultAuthorized, "CCIP validate: sender not authorized in vault");
+
+            if (cfg.receiver != address(0)) {
+                bool receiverVaultAuthorized = IVaultCCIPValidate(cfg.vault).authorizedSpenders(cfg.receiver);
+                console.log("receiver vault authorized:", receiverVaultAuthorized);
+                if (cfg.strict) require(receiverVaultAuthorized, "CCIP validate: receiver not authorized in vault");
+            }
+        }
+
         if (cfg.receiver != address(0) && cfg.sourceChainSelector > 0) {
             ICCIPReceiverValidate receiver = ICCIPReceiverValidate(cfg.receiver);
             bool allowed = receiver.allowedSourceChains(cfg.sourceChainSelector);
@@ -122,6 +140,12 @@ contract ValidateCCIPPath is Script {
                     require(trustedBytes == cfg.trustedSender, "CCIP validate: trusted sender mismatch");
                 }
             }
+        }
+
+        if (cfg.gateway != address(0) && cfg.receiver != address(0)) {
+            bool receiverGatewayAuthorized = IGatewayCCIPValidate(cfg.gateway).isAuthorizedAdapter(cfg.receiver);
+            console.log("receiver gateway authorized:", receiverGatewayAuthorized);
+            if (cfg.strict) require(receiverGatewayAuthorized, "CCIP validate: receiver not authorized in gateway");
         }
 
         if (cfg.sourceToken != address(0) && cfg.destToken != address(0) && cfg.amount > 0) {
@@ -152,6 +176,7 @@ contract ValidateCCIPPath is Script {
             cfg = ValidateConfig({
                 router: 0x1d7550079DAe36f55F4999E0B24AC037D092249C,
                 gateway: 0xC696dCAC9369fD26AB37d116C54cC2f19B156e4D,
+                vault: vm.envOr("BASE_CCIP_VALIDATE_VAULT", address(0xe3Be18b812b0645674cCa81f24dC5f7bD62911b7)),
                 destCaip2: vm.envOr("BASE_CCIP_VALIDATE_DEST_CAIP2", string("eip155:137")),
                 bridgeType: uint8(vm.envOr("BASE_CCIP_VALIDATE_BRIDGE_TYPE", uint256(1))),
                 strict: vm.envOr("BASE_CCIP_VALIDATE_STRICT", true),
@@ -183,6 +208,7 @@ contract ValidateCCIPPath is Script {
         // Optional global overrides for emergency checks
         cfg.router = vm.envOr("CCIP_VALIDATE_ROUTER", cfg.router);
         cfg.gateway = vm.envOr("CCIP_VALIDATE_GATEWAY", cfg.gateway);
+        cfg.vault = vm.envOr("CCIP_VALIDATE_VAULT", cfg.vault);
         cfg.destCaip2 = vm.envOr("CCIP_VALIDATE_DEST_CAIP2", cfg.destCaip2);
         cfg.bridgeType = uint8(vm.envOr("CCIP_VALIDATE_BRIDGE_TYPE", uint256(cfg.bridgeType)));
         cfg.strict = vm.envOr("CCIP_VALIDATE_STRICT", cfg.strict);

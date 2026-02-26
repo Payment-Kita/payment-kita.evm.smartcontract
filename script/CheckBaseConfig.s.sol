@@ -44,7 +44,7 @@ contract CheckBaseConfig is Script {
             console.log("Checking direct pool config...");
             
             // directPools(bytes32) returns (uint24 fee, int24 tickSpacing, address hooks, bytes memory hookData, bool isActive)
-            try tokenSwapper.directPools(pairKey) returns (uint24 fee, int24 tick, address hooks, bytes memory hookData, bool isActive) {
+            try tokenSwapper.directPools(pairKey) returns (uint24 fee, int24, address, bytes memory, bool isActive) {
                  console.log("Direct Pool Active:", isActive);
                  console.log("Direct Pool Fee:", fee);
             } catch {

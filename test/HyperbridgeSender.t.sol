@@ -54,7 +54,7 @@ contract MockSwapper is ISwapperHB {
         // Mock transfer feeToken to recipient
         MockERC20(tokenOut).mint(recipient, amountOut);
         // Burn WETH from sender
-        MockERC20(tokenIn).transferFrom(msg.sender, address(this), amountIn);
+        require(MockERC20(tokenIn).transferFrom(msg.sender, address(this), amountIn), "TRANSFER_FROM_FAILED");
         
         return amountOut;
     }

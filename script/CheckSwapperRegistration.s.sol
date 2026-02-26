@@ -11,7 +11,7 @@ contract CheckSwapperRegistration is Script {
     address constant GATEWAY = 0xBaB8d97Fbdf6788BF40B01C096CFB2cC661ba642;
     address constant NEW_SWAPPER = 0x96562f9A774AA5dc1B3E251Df3B78EBaE682B984;
 
-    function run() external {
+    function run() external view {
         console.log("Checking Swapper Registration on Base...");
         console.log("Vault:", VAULT);
         console.log("Gateway:", GATEWAY);
