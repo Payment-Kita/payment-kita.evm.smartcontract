@@ -4,13 +4,13 @@ pragma solidity ^0.8.20;
 import "forge-std/Script.sol";
 import "forge-std/console.sol";
 import "../src/TokenSwapper.sol";
-import "../src/PayChainGateway.sol";
-import "../src/vaults/PayChainVault.sol";
+import "../src/PaymentKitaGateway.sol";
+import "../src/vaults/PaymentKitaVault.sol";
 
 contract VerifyAllPolygonRoutes is Script {
     // Polygon Contracts
     TokenSwapper constant SWAPPER = TokenSwapper(0xF043b0b91C8F5b6C2DC63897f1632D6D15e199A9);
-    PayChainGateway constant GATEWAY = PayChainGateway(0x7a4f3b606D90e72555A36cB370531638fad19Bf8);
+    PaymentKitaGateway constant GATEWAY = PaymentKitaGateway(0x7a4f3b606D90e72555A36cB370531638fad19Bf8);
     TokenRegistry constant REGISTRY = TokenRegistry(0xd2C69EA4968e9F7cc8C0F447eB9b6DFdFFb1F8D7);
     
     // Polygon Tokens

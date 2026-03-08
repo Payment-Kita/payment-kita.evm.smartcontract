@@ -10,12 +10,12 @@ Freeze and snapshot the current CCIP state before code patching so post-fix regr
 
 ## Sources of Truth Used
 
-1. `pay-chain.evm.smartcontract/CHAIN_BASE.md`
-2. `pay-chain.evm.smartcontract/CHAIN_POLYGON.md`
-3. `pay-chain.evm.smartcontract/CHAIN_ARBITRUM.md`
-4. `pay-chain.evm.smartcontract/.env`
-5. `pay-chain.evm.smartcontract/script/DeployCommon.s.sol`
-6. `pay-chain.evm.smartcontract/script/ConfigureRoutes.s.sol`
+1. `payment-kita.evm.smartcontract/CHAIN_BASE.md`
+2. `payment-kita.evm.smartcontract/CHAIN_POLYGON.md`
+3. `payment-kita.evm.smartcontract/CHAIN_ARBITRUM.md`
+4. `payment-kita.evm.smartcontract/.env`
+5. `payment-kita.evm.smartcontract/script/DeployCommon.s.sol`
+6. `payment-kita.evm.smartcontract/script/ConfigureRoutes.s.sol`
 
 ## Current Deployment Inventory (from CHAIN_*.md)
 

@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "forge-std/Script.sol";
-import "../src/vaults/PayChainVault.sol";
+import "../src/vaults/PaymentKitaVault.sol";
 
 contract AuthorizeBaseAdapters is Script {
     function run() external {
@@ -19,7 +19,7 @@ contract AuthorizeBaseAdapters is Script {
 
         vm.startBroadcast(deployerPrivateKey);
 
-        PayChainVault vault = PayChainVault(vaultAddress);
+        PaymentKitaVault vault = PaymentKitaVault(vaultAddress);
         
         console2.log("Authorizing Gateway:", gateway);
         vault.setAuthorizedSpender(gateway, true);

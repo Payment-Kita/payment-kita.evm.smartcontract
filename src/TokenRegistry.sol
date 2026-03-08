@@ -5,7 +5,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 
 /**
  * @title TokenRegistry
- * @notice Central registry for supported tokens in the PayChain protocol
+ * @notice Central registry for supported tokens in the PaymentKita protocol
  */
 contract TokenRegistry is Ownable {
     

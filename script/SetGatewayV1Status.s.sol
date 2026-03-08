@@ -19,11 +19,19 @@ contract SetGatewayV1Status is Script {
         vm.startBroadcast(pk);
 
         if (_eq(mode, "global")) {
-            IGatewayV1StatusSetter(gateway).setV1GlobalDisabled(disabled);
+            _callOrRevert(
+                gateway,
+                abi.encodeWithSelector(IGatewayV1StatusSetter.setV1GlobalDisabled.selector, disabled),
+                "setV1GlobalDisabled"
+            );
             console.log("setV1GlobalDisabled:", disabled);
         } else {
             string memory destCaip2 = vm.envString("GATEWAY_V1_STATUS_DEST_CAIP2");
-            IGatewayV1StatusSetter(gateway).setV1LaneDisabled(destCaip2, disabled);
+            _callOrRevert(
+                gateway,
+                abi.encodeWithSelector(IGatewayV1StatusSetter.setV1LaneDisabled.selector, destCaip2, disabled),
+                "setV1LaneDisabled"
+            );
             console.log("setV1LaneDisabled:", destCaip2, disabled);
         }
 
@@ -34,5 +42,9 @@ contract SetGatewayV1Status is Script {
     function _eq(string memory a, string memory b) internal pure returns (bool) {
         return keccak256(bytes(a)) == keccak256(bytes(b));
     }
-}
 
+    function _callOrRevert(address target, bytes memory data, string memory label) internal {
+        (bool ok,) = target.call(data);
+        require(ok, string(abi.encodePacked(label, " unavailable on this gateway (V2-only)")));
+    }
+}

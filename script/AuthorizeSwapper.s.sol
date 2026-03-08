@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "forge-std/Script.sol";
-import "../src/vaults/PayChainVault.sol";
+import "../src/vaults/PaymentKitaVault.sol";
 
 contract AuthorizeSwapper is Script {
     function run() public {
@@ -15,8 +15,8 @@ contract AuthorizeSwapper is Script {
         vm.startBroadcast(deployerPrivateKey);
 
         // Authorize TokenSwapper in Vault
-        PayChainVault(vault).setAuthorizedSpender(swapper, true);
-        console.log("Authorized TokenSwapper in PayChainVault");
+        PaymentKitaVault(vault).setAuthorizedSpender(swapper, true);
+        console.log("Authorized TokenSwapper in PaymentKitaVault");
 
         vm.stopBroadcast();
     }

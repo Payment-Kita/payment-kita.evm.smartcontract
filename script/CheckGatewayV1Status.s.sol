@@ -14,14 +14,39 @@ contract CheckGatewayV1Status is Script {
         address gateway = vm.envAddress("GATEWAY_V1_STATUS_GATEWAY");
         string memory destCaip2 = vm.envOr("GATEWAY_V1_STATUS_DEST_CAIP2", string(""));
 
-        bool globalDisabled = IGatewayV1StatusView(gateway).v1DisabledGlobal();
         console.log("Gateway:", gateway);
-        console.log("v1DisabledGlobal:", globalDisabled);
+
+        (bool hasGlobal, bool globalDisabled) = _readBool(
+            gateway,
+            abi.encodeWithSelector(IGatewayV1StatusView.v1DisabledGlobal.selector)
+        );
+        if (hasGlobal) {
+            console.log("v1DisabledGlobal:", globalDisabled);
+        } else {
+            console.log("v1DisabledGlobal: <unsupported_on_gateway>");
+        }
 
         if (bytes(destCaip2).length > 0) {
-            bool laneDisabled = IGatewayV1StatusView(gateway).v1DisabledByDestCaip2(destCaip2);
             console.log("dest:", destCaip2);
-            console.log("v1DisabledLane:", laneDisabled);
+            (bool hasLane, bool laneDisabled) = _readBool(
+                gateway,
+                abi.encodeWithSelector(IGatewayV1StatusView.v1DisabledByDestCaip2.selector, destCaip2)
+            );
+            if (hasLane) {
+                console.log("v1DisabledLane:", laneDisabled);
+            } else {
+                console.log("v1DisabledLane: <unsupported_on_gateway>");
+            }
         }
+    }
+
+    function _readBool(address target, bytes memory data) internal view returns (bool ok, bool value) {
+        bytes memory ret;
+        (ok, ret) = target.staticcall(data);
+        if (!ok || ret.length < 32) {
+            return (false, false);
+        }
+        value = abi.decode(ret, (bool));
+        return (true, value);
     }
 }

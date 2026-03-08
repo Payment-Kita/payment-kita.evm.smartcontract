@@ -2,8 +2,8 @@
 pragma solidity ^0.8.20;
 
 import "forge-std/Script.sol";
-import "../src/vaults/PayChainVault.sol";
-import "../src/PayChainGateway.sol";
+import "../src/vaults/PaymentKitaVault.sol";
+import "../src/PaymentKitaGateway.sol";
 
 contract CheckSwapperRegistration is Script {
     // Source of Truth from CHAIN_BASE.md
@@ -18,12 +18,12 @@ contract CheckSwapperRegistration is Script {
         console.log("New Swapper:", NEW_SWAPPER);
 
         // 1. Check Vault Authorization
-        PayChainVault vault = PayChainVault(VAULT);
+        PaymentKitaVault vault = PaymentKitaVault(VAULT);
         bool isAuthorized = vault.authorizedSpenders(NEW_SWAPPER);
         console.log("Is Swapper authorized in Vault:", isAuthorized);
 
         // 2. Check Gateway Configuration
-        PayChainGateway gateway = PayChainGateway(GATEWAY);
+        PaymentKitaGateway gateway = PaymentKitaGateway(GATEWAY);
         address currentSwapper = address(gateway.swapper());
         console.log("Current Swapper in Gateway:", currentSwapper);
         

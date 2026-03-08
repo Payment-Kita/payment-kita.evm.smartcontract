@@ -7,11 +7,11 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /**
- * @title PayChainVault
- * @notice Central vault for holding PayChain Protocol assets
+ * @title PaymentKitaVault
+ * @notice Central vault for holding PaymentKita Protocol assets
  * @dev Handles user deposits, approvals, and withdrawals by authorized components (Gateway/Adapters)
  */
-contract PayChainVault is Ownable, ReentrancyGuard {
+contract PaymentKitaVault is Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     // ============ State Variables ============

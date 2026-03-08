@@ -1,8 +1,8 @@
 # DEPLOYMENT CONTRACT
 TokenRegistry deployed at: 0x19cC8187e5DF6D482EF26443FC11C90123348C8e
-PayChainVault deployed at: 0xe3Be18b812b0645674cCa81f24dC5f7bD62911b7
-PayChainRouter deployed at: 0x1d7550079DAe36f55F4999E0B24AC037D092249C
-PayChainGateway deployed at: 0xC696dCAC9369fD26AB37d116C54cC2f19B156e4D
+PaymentKitaVault deployed at: 0xe3Be18b812b0645674cCa81f24dC5f7bD62911b7
+PaymentKitaRouter deployed at: 0x1d7550079DAe36f55F4999E0B24AC037D092249C
+PaymentKitaGateway deployed at: 0xC696dCAC9369fD26AB37d116C54cC2f19B156e4D
 TokenSwapper deployed at: 0x6E331897BCa189678cd60E966F1b1c94517E946E (V3 - Support Reset Pair & Multi-hop)
 -> Correct Checksummed Address for Viem: 0x6E331897BCa189678cd60E966F1b1c94517E946E
 CCIPSender deployed at: 0xEBCca0174587A52317598954De902A1bd1869158 (Active, rotated, verified)

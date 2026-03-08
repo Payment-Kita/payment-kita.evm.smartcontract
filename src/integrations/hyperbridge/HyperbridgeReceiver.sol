@@ -6,8 +6,8 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@hyperbridge/core/apps/HyperApp.sol";
 import {PostRequest} from "@hyperbridge/core/libraries/Message.sol";
-import "../../vaults/PayChainVault.sol";
-import "../../PayChainGateway.sol";
+import "../../vaults/PaymentKitaVault.sol";
+import "../../PaymentKitaGateway.sol";
 import "../../TokenSwapper.sol";
 
 /**
@@ -19,8 +19,8 @@ contract HyperbridgeReceiver is HyperApp, Ownable {
 
     // ============ State Variables ============
 
-    PayChainGateway public gateway;
-    PayChainVault public vault;
+    PaymentKitaGateway public gateway;
+    PaymentKitaVault public vault;
     TokenSwapper public swapper;
 
     /// @notice Whether to automatically process refunds on timeout
@@ -38,8 +38,8 @@ contract HyperbridgeReceiver is HyperApp, Ownable {
         address _vault
     ) Ownable(msg.sender) {
         _HYPERBRIDGE_HOST = _host; // HyperApp internal var
-        gateway = PayChainGateway(_gateway);
-        vault = PayChainVault(_vault);
+        gateway = PaymentKitaGateway(_gateway);
+        vault = PaymentKitaVault(_vault);
     }
 
     /// @notice Trusted senders on source chains (sourceChainHash => senderAddressBytes)

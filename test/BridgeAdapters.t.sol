@@ -10,9 +10,9 @@ import "../src/integrations/ccip/CCIPReceiver.sol";
 import "../src/integrations/layerzero/LayerZeroSenderAdapter.sol";
 import "../src/integrations/layerzero/LayerZeroReceiverAdapter.sol";
 import "../src/integrations/layerzero/OApp.sol";
-import "../src/vaults/PayChainVault.sol";
-import "../src/PayChainGateway.sol";
-import "../src/PayChainRouter.sol";
+import "../src/vaults/PaymentKitaVault.sol";
+import "../src/PaymentKitaGateway.sol";
+import "../src/PaymentKitaRouter.sol";
 import "../src/TokenRegistry.sol";
 import "../src/TokenSwapper.sol";
 import "../src/integrations/ccip/Client.sol";
@@ -109,10 +109,10 @@ contract MockHyperbridgeDispatcherNoRouter {
 contract MockVaultSwapper {
     using SafeERC20 for IERC20;
 
-    PayChainVault public immutable vault;
+    PaymentKitaVault public immutable vault;
 
     constructor(address _vault) {
-        vault = PayChainVault(_vault);
+        vault = PaymentKitaVault(_vault);
     }
 
     function swapFromVault(
@@ -189,7 +189,7 @@ contract BridgeAdaptersTest is Test {
         MockToken feeToken = new MockToken();
         MockHBUniswapRouter uni = new MockHBUniswapRouter(address(0xEeee), 3);
         MockHyperbridgeDispatcher dispatcher = new MockHyperbridgeDispatcher(address(feeToken), address(uni), 2);
-        PayChainVault vault = new PayChainVault();
+        PaymentKitaVault vault = new PaymentKitaVault();
         HyperbridgeSender sender = new HyperbridgeSender(address(vault), address(dispatcher), address(vault), address(this));
 
         sender.setStateMachineId(DEST_CAIP2, hex"45564d2d3432313631");
@@ -219,7 +219,7 @@ contract BridgeAdaptersTest is Test {
         MockHBUniswapRouter uni = new MockHBUniswapRouter(address(0xEeee), 1);
         // perByte = 2
         MockHyperbridgeDispatcher dispatcher = new MockHyperbridgeDispatcher(address(feeToken), address(uni), 2);
-        PayChainVault vault = new PayChainVault();
+        PaymentKitaVault vault = new PaymentKitaVault();
         HyperbridgeSender sender = new HyperbridgeSender(address(vault), address(dispatcher), address(vault), address(this));
 
         sender.setStateMachineId(DEST_CAIP2, hex"45564d2d3432313631");
@@ -242,7 +242,7 @@ contract BridgeAdaptersTest is Test {
         // multiplier 2 => native quote should be 2x feeToken then +10%
         MockHBUniswapRouter uni = new MockHBUniswapRouter(address(0xEeee), 2);
         MockHyperbridgeDispatcher dispatcher = new MockHyperbridgeDispatcher(address(feeToken), address(uni), 2);
-        PayChainVault vault = new PayChainVault();
+        PaymentKitaVault vault = new PaymentKitaVault();
         HyperbridgeSender sender = new HyperbridgeSender(address(vault), address(dispatcher), address(vault), address(this));
 
         sender.setStateMachineId(DEST_CAIP2, hex"45564d2d3432313631");
@@ -266,7 +266,7 @@ contract BridgeAdaptersTest is Test {
         MockToken feeToken = new MockToken();
         MockHBUniswapRouter uni = new MockHBUniswapRouter(address(0xEeee), 2);
         MockHyperbridgeDispatcher dispatcher = new MockHyperbridgeDispatcher(address(feeToken), address(uni), 1);
-        PayChainVault vault = new PayChainVault();
+        PaymentKitaVault vault = new PaymentKitaVault();
         HyperbridgeSender sender = new HyperbridgeSender(address(vault), address(dispatcher), address(vault), address(this));
 
         assertFalse(sender.isRouteConfigured(DEST_CAIP2));
@@ -281,7 +281,7 @@ contract BridgeAdaptersTest is Test {
     function testHyperbridgeQuoteRevertsWhenNativeQuoteUnavailable() public {
         MockToken feeToken = new MockToken();
         MockHyperbridgeDispatcherNoRouter dispatcher = new MockHyperbridgeDispatcherNoRouter(address(feeToken), 2);
-        PayChainVault vault = new PayChainVault();
+        PaymentKitaVault vault = new PaymentKitaVault();
         HyperbridgeSender sender = new HyperbridgeSender(address(vault), address(dispatcher), address(vault), address(this));
 
         sender.setStateMachineId(DEST_CAIP2, hex"45564d2d3432313631");
@@ -296,9 +296,9 @@ contract BridgeAdaptersTest is Test {
         MockToken feeToken = new MockToken();
         MockHBUniswapRouter uni = new MockHBUniswapRouter(address(0xEeee), 2);
         MockHyperbridgeDispatcher dispatcher = new MockHyperbridgeDispatcher(address(feeToken), address(uni), 1);
-        PayChainVault vault = new PayChainVault();
+        PaymentKitaVault vault = new PaymentKitaVault();
         HyperbridgeSender sender = new HyperbridgeSender(address(vault), address(dispatcher), address(vault), address(this));
-        PayChainRouter router = new PayChainRouter();
+        PaymentKitaRouter router = new PaymentKitaRouter();
 
         router.registerAdapter(DEST_CAIP2, 0, address(sender));
 
@@ -313,9 +313,9 @@ contract BridgeAdaptersTest is Test {
         MockToken feeToken = new MockToken();
         MockHBUniswapRouter uni = new MockHBUniswapRouter(address(0xEeee), 2);
         MockHyperbridgeDispatcher dispatcher = new MockHyperbridgeDispatcher(address(feeToken), address(uni), 1);
-        PayChainVault vault = new PayChainVault();
+        PaymentKitaVault vault = new PaymentKitaVault();
         HyperbridgeSender sender = new HyperbridgeSender(address(vault), address(dispatcher), address(vault), address(this));
-        PayChainRouter router = new PayChainRouter();
+        PaymentKitaRouter router = new PaymentKitaRouter();
 
         sender.setStateMachineId(DEST_CAIP2, hex"45564d2d3432313631");
         sender.setDestinationContract(DEST_CAIP2, hex"1111111111111111111111111111111111111111");
@@ -416,10 +416,10 @@ contract BridgeAdaptersTest is Test {
 
     function testLayerZeroReceiverAcceptsTrustedMessageAndReleasesFunds() public {
         MockLZEndpoint endpoint = new MockLZEndpoint();
-        PayChainVault vault = new PayChainVault();
-        PayChainRouter router = new PayChainRouter();
+        PaymentKitaVault vault = new PaymentKitaVault();
+        PaymentKitaRouter router = new PaymentKitaRouter();
         TokenRegistry registry = new TokenRegistry();
-        PayChainGateway gateway = new PayChainGateway(address(vault), address(router), address(registry), address(this));
+        PaymentKitaGateway gateway = new PaymentKitaGateway(address(vault), address(router), address(registry), address(this));
         LayerZeroReceiverAdapter receiver = new LayerZeroReceiverAdapter(address(endpoint), address(gateway), address(vault));
 
         MockToken token = new MockToken();
@@ -449,10 +449,10 @@ contract BridgeAdaptersTest is Test {
 
     function testLayerZeroReceiverRevertsForUntrustedPeer() public {
         MockLZEndpoint endpoint = new MockLZEndpoint();
-        PayChainVault vault = new PayChainVault();
-        PayChainRouter router = new PayChainRouter();
+        PaymentKitaVault vault = new PaymentKitaVault();
+        PaymentKitaRouter router = new PaymentKitaRouter();
         TokenRegistry registry = new TokenRegistry();
-        PayChainGateway gateway = new PayChainGateway(address(vault), address(router), address(registry), address(this));
+        PaymentKitaGateway gateway = new PaymentKitaGateway(address(vault), address(router), address(registry), address(this));
         LayerZeroReceiverAdapter receiver = new LayerZeroReceiverAdapter(address(endpoint), address(gateway), address(vault));
 
         receiver.setPeer(30111, bytes32(uint256(uint160(address(0xABCD)))));
@@ -478,10 +478,10 @@ contract BridgeAdaptersTest is Test {
 
     function testLayerZeroReceiverGetPathState() public {
         MockLZEndpoint endpoint = new MockLZEndpoint();
-        PayChainVault vault = new PayChainVault();
-        PayChainRouter router = new PayChainRouter();
+        PaymentKitaVault vault = new PaymentKitaVault();
+        PaymentKitaRouter router = new PaymentKitaRouter();
         TokenRegistry registry = new TokenRegistry();
-        PayChainGateway gateway = new PayChainGateway(address(vault), address(router), address(registry), address(this));
+        PaymentKitaGateway gateway = new PaymentKitaGateway(address(vault), address(router), address(registry), address(this));
         LayerZeroReceiverAdapter receiver = new LayerZeroReceiverAdapter(address(endpoint), address(gateway), address(vault));
 
         uint32 srcEid = 30111;
@@ -507,10 +507,10 @@ contract BridgeAdaptersTest is Test {
 
     function testLayerZeroReceiverDestSwapPath() public {
         MockLZEndpoint endpoint = new MockLZEndpoint();
-        PayChainVault vault = new PayChainVault();
-        PayChainRouter router = new PayChainRouter();
+        PaymentKitaVault vault = new PaymentKitaVault();
+        PaymentKitaRouter router = new PaymentKitaRouter();
         TokenRegistry registry = new TokenRegistry();
-        PayChainGateway gateway = new PayChainGateway(address(vault), address(router), address(registry), address(this));
+        PaymentKitaGateway gateway = new PaymentKitaGateway(address(vault), address(router), address(registry), address(this));
         LayerZeroReceiverAdapter receiver = new LayerZeroReceiverAdapter(address(endpoint), address(gateway), address(vault));
         MockVaultSwapper mockSwapper = new MockVaultSwapper(address(vault));
         receiver.setSwapper(address(mockSwapper));
@@ -552,10 +552,10 @@ contract BridgeAdaptersTest is Test {
     }
 
     function testCCIPReceiverAdapterRevertsIfNotRouter() public {
-        PayChainVault vault = new PayChainVault();
-        PayChainRouter router = new PayChainRouter();
+        PaymentKitaVault vault = new PaymentKitaVault();
+        PaymentKitaRouter router = new PaymentKitaRouter();
         TokenRegistry registry = new TokenRegistry();
-        PayChainGateway gateway = new PayChainGateway(address(vault), address(router), address(registry), address(this));
+        PaymentKitaGateway gateway = new PaymentKitaGateway(address(vault), address(router), address(registry), address(this));
 
         address ccipRouter = address(0xC0FFEE);
         CCIPReceiverAdapter receiver = new CCIPReceiverAdapter(ccipRouter, address(gateway));
@@ -575,10 +575,10 @@ contract BridgeAdaptersTest is Test {
     }
 
     function testCCIPReceiverAdapterAcceptsTrustedMessageV1() public {
-        PayChainVault vault = new PayChainVault();
-        PayChainRouter router = new PayChainRouter();
+        PaymentKitaVault vault = new PaymentKitaVault();
+        PaymentKitaRouter router = new PaymentKitaRouter();
         TokenRegistry registry = new TokenRegistry();
-        PayChainGateway gateway = new PayChainGateway(address(vault), address(router), address(registry), address(this));
+        PaymentKitaGateway gateway = new PaymentKitaGateway(address(vault), address(router), address(registry), address(this));
 
         address ccipRouter = address(0xC0FFEE);
         CCIPReceiverAdapter receiver = new CCIPReceiverAdapter(ccipRouter, address(gateway));
@@ -606,10 +606,10 @@ contract BridgeAdaptersTest is Test {
     }
 
     function testCCIPReceiverAdapterDestSwapPathV2() public {
-        PayChainVault vault = new PayChainVault();
-        PayChainRouter router = new PayChainRouter();
+        PaymentKitaVault vault = new PaymentKitaVault();
+        PaymentKitaRouter router = new PaymentKitaRouter();
         TokenRegistry registry = new TokenRegistry();
-        PayChainGateway gateway = new PayChainGateway(address(vault), address(router), address(registry), address(this));
+        PaymentKitaGateway gateway = new PaymentKitaGateway(address(vault), address(router), address(registry), address(this));
 
         address ccipRouter = address(0xC0FFEE);
         CCIPReceiverAdapter receiver = new CCIPReceiverAdapter(ccipRouter, address(gateway));
@@ -644,10 +644,10 @@ contract BridgeAdaptersTest is Test {
     }
 
     function test_payloadV1V2Compat() public {
-        PayChainVault vault = new PayChainVault();
-        PayChainRouter router = new PayChainRouter();
+        PaymentKitaVault vault = new PaymentKitaVault();
+        PaymentKitaRouter router = new PaymentKitaRouter();
         TokenRegistry registry = new TokenRegistry();
-        PayChainGateway gateway = new PayChainGateway(address(vault), address(router), address(registry), address(this));
+        PaymentKitaGateway gateway = new PaymentKitaGateway(address(vault), address(router), address(registry), address(this));
 
         address hostAddress = address(0x9999);
         HyperbridgeReceiver receiver = new HyperbridgeReceiver(hostAddress, address(gateway), address(vault));
@@ -697,10 +697,10 @@ contract BridgeAdaptersTest is Test {
     }
 
     function testCCIPReceiverAdapterStoresFailedMessageOnTokenMismatch() public {
-        PayChainVault vault = new PayChainVault();
-        PayChainRouter router = new PayChainRouter();
+        PaymentKitaVault vault = new PaymentKitaVault();
+        PaymentKitaRouter router = new PaymentKitaRouter();
         TokenRegistry registry = new TokenRegistry();
-        PayChainGateway gateway = new PayChainGateway(address(vault), address(router), address(registry), address(this));
+        PaymentKitaGateway gateway = new PaymentKitaGateway(address(vault), address(router), address(registry), address(this));
 
         address ccipRouter = address(0xC0FFEE);
         CCIPReceiverAdapter receiver = new CCIPReceiverAdapter(ccipRouter, address(gateway));
@@ -729,10 +729,10 @@ contract BridgeAdaptersTest is Test {
     }
 
     function testCCIPReceiverAdapterRetryFailedMessageIncrementsRetryCount() public {
-        PayChainVault vault = new PayChainVault();
-        PayChainRouter router = new PayChainRouter();
+        PaymentKitaVault vault = new PaymentKitaVault();
+        PaymentKitaRouter router = new PaymentKitaRouter();
         TokenRegistry registry = new TokenRegistry();
-        PayChainGateway gateway = new PayChainGateway(address(vault), address(router), address(registry), address(this));
+        PaymentKitaGateway gateway = new PaymentKitaGateway(address(vault), address(router), address(registry), address(this));
 
         address ccipRouter = address(0xC0FFEE);
         CCIPReceiverAdapter receiver = new CCIPReceiverAdapter(ccipRouter, address(gateway));
@@ -759,10 +759,10 @@ contract BridgeAdaptersTest is Test {
     }
 
     function testHyperbridgeReceiverRevertsIfNotHost() public {
-        PayChainVault vault = new PayChainVault();
-        PayChainRouter router = new PayChainRouter();
+        PaymentKitaVault vault = new PaymentKitaVault();
+        PaymentKitaRouter router = new PaymentKitaRouter();
         TokenRegistry registry = new TokenRegistry();
-        PayChainGateway gateway = new PayChainGateway(address(vault), address(router), address(registry), address(this));
+        PaymentKitaGateway gateway = new PaymentKitaGateway(address(vault), address(router), address(registry), address(this));
 
         address hostAddress = address(0x9999);
         HyperbridgeReceiver receiver = new HyperbridgeReceiver(hostAddress, address(gateway), address(vault));
@@ -785,10 +785,10 @@ contract BridgeAdaptersTest is Test {
     }
 
     function testHyperbridgeReceiverAcceptsFromHostAndReleasesLiquidity() public {
-        PayChainVault vault = new PayChainVault();
-        PayChainRouter router = new PayChainRouter();
+        PaymentKitaVault vault = new PaymentKitaVault();
+        PaymentKitaRouter router = new PaymentKitaRouter();
         TokenRegistry registry = new TokenRegistry();
-        PayChainGateway gateway = new PayChainGateway(address(vault), address(router), address(registry), address(this));
+        PaymentKitaGateway gateway = new PaymentKitaGateway(address(vault), address(router), address(registry), address(this));
 
         address hostAddress = address(0x9999);
         HyperbridgeReceiver receiver = new HyperbridgeReceiver(hostAddress, address(gateway), address(vault));
@@ -820,10 +820,10 @@ contract BridgeAdaptersTest is Test {
     }
 
     function testHyperbridgeReceiverDestSwapPath() public {
-        PayChainVault vault = new PayChainVault();
-        PayChainRouter router = new PayChainRouter();
+        PaymentKitaVault vault = new PaymentKitaVault();
+        PaymentKitaRouter router = new PaymentKitaRouter();
         TokenRegistry registry = new TokenRegistry();
-        PayChainGateway gateway = new PayChainGateway(address(vault), address(router), address(registry), address(this));
+        PaymentKitaGateway gateway = new PaymentKitaGateway(address(vault), address(router), address(registry), address(this));
 
         address hostAddress = address(0x9999);
         HyperbridgeReceiver receiver = new HyperbridgeReceiver(hostAddress, address(gateway), address(vault));
@@ -881,10 +881,10 @@ contract BridgeAdaptersTest is Test {
 
     function testLZNonceStrictOrdering() public {
         MockLZEndpoint endpoint = new MockLZEndpoint();
-        PayChainVault vault = new PayChainVault();
-        PayChainRouter router = new PayChainRouter();
+        PaymentKitaVault vault = new PaymentKitaVault();
+        PaymentKitaRouter router = new PaymentKitaRouter();
         TokenRegistry registry = new TokenRegistry();
-        PayChainGateway gateway = new PayChainGateway(address(vault), address(router), address(registry), address(this));
+        PaymentKitaGateway gateway = new PaymentKitaGateway(address(vault), address(router), address(registry), address(this));
         LayerZeroReceiverAdapter receiver = new LayerZeroReceiverAdapter(address(endpoint), address(gateway), address(vault));
 
         MockToken token = new MockToken();
@@ -947,10 +947,10 @@ contract BridgeAdaptersTest is Test {
     // ============ New Tests: HB Auto Refund On Timeout ============
 
     function testHBAutoRefundOnTimeout() public {
-        PayChainVault vault = new PayChainVault();
-        PayChainRouter router = new PayChainRouter();
+        PaymentKitaVault vault = new PaymentKitaVault();
+        PaymentKitaRouter router = new PaymentKitaRouter();
         TokenRegistry registry = new TokenRegistry();
-        PayChainGateway gateway = new PayChainGateway(address(vault), address(router), address(registry), address(this));
+        PaymentKitaGateway gateway = new PaymentKitaGateway(address(vault), address(router), address(registry), address(this));
 
         address hostAddress = address(0x9999);
         HyperbridgeReceiver receiver = new HyperbridgeReceiver(hostAddress, address(gateway), address(vault));
@@ -980,10 +980,10 @@ contract BridgeAdaptersTest is Test {
     }
 
     function testHBNoRefundWhenDisabled() public {
-        PayChainVault vault = new PayChainVault();
-        PayChainRouter router = new PayChainRouter();
+        PaymentKitaVault vault = new PaymentKitaVault();
+        PaymentKitaRouter router = new PaymentKitaRouter();
         TokenRegistry registry = new TokenRegistry();
-        PayChainGateway gateway = new PayChainGateway(address(vault), address(router), address(registry), address(this));
+        PaymentKitaGateway gateway = new PaymentKitaGateway(address(vault), address(router), address(registry), address(this));
 
         address hostAddress = address(0x9999);
         HyperbridgeReceiver receiver = new HyperbridgeReceiver(hostAddress, address(gateway), address(vault));

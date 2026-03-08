@@ -6,8 +6,8 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "./CCIPReceiverBase.sol";
 import "./Client.sol";
-import "../../PayChainGateway.sol";
-import "../../vaults/PayChainVault.sol";
+import "../../PaymentKitaGateway.sol";
+import "../../vaults/PaymentKitaVault.sol";
 import "../../TokenSwapper.sol";
 
 /**
@@ -20,8 +20,8 @@ contract CCIPReceiverAdapter is CCIPReceiverBase, Ownable {
 
     // ============ State Variables ============
 
-    PayChainGateway public gateway;
-    PayChainVault public vault;
+    PaymentKitaGateway public gateway;
+    PaymentKitaVault public vault;
     TokenSwapper public swapper;
 
     /// @notice Trusted sender addresses per source chain selector
@@ -70,7 +70,7 @@ contract CCIPReceiverAdapter is CCIPReceiverBase, Ownable {
         address _ccipRouter,
         address _gateway
     ) CCIPReceiverBase(_ccipRouter) Ownable(msg.sender) {
-        gateway = PayChainGateway(_gateway);
+        gateway = PaymentKitaGateway(_gateway);
         vault = gateway.vault();
     }
 

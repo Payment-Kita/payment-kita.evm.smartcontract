@@ -5,8 +5,8 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "../../interfaces/IBridgeAdapter.sol";
-import "../../vaults/PayChainVault.sol";
-import "../../PayChainGateway.sol";
+import "../../vaults/PaymentKitaVault.sol";
+import "../../PaymentKitaGateway.sol";
 import "@hyperbridge/core/apps/HyperApp.sol";
 import {IDispatcher, DispatchPost, PostRequest} from "@hyperbridge/core/interfaces/IDispatcher.sol";
 
@@ -34,7 +34,7 @@ interface IWETHHB {
  * @dev Implements full ISMP dispatch using Hyperbridge host/dispatcher
  * 
  * Architecture:
- * - PayChain uses a Liquidity Network model on top of ISMP messaging
+ * - PaymentKita uses a Liquidity Network model on top of ISMP messaging
  * - Tokens are locked in the source Vault
  * - ISMP message instructs the destination receiver to release tokens
  * - No native token bridging - messaging only
@@ -44,8 +44,8 @@ contract HyperbridgeSender is IBridgeAdapter, HyperApp, Ownable {
 
     // ============ State Variables ============
 
-    PayChainVault public vault;
-    PayChainGateway public gateway;
+    PaymentKitaVault public vault;
+    PaymentKitaGateway public gateway;
     address public immutable router;
     
     // Internal state for host helper
@@ -55,7 +55,7 @@ contract HyperbridgeSender is IBridgeAdapter, HyperApp, Ownable {
     /// @dev Format: "POLKADOT-1000", "EVM-1", "EVM-42161", etc.
     mapping(string => bytes) public stateMachineIds;
     
-    /// @notice Destination PayChain receiver contract addresses
+    /// @notice Destination PaymentKita receiver contract addresses
     mapping(string => bytes) public destinationContracts;
 
     /// @notice Default timeout for requests (1 hour)
@@ -112,8 +112,8 @@ contract HyperbridgeSender is IBridgeAdapter, HyperApp, Ownable {
         address _router
     ) Ownable(msg.sender) {
         if (_vault == address(0) || _host == address(0) || _gateway == address(0) || _router == address(0)) revert ZeroAddress();
-        vault = PayChainVault(_vault);
-        gateway = PayChainGateway(_gateway);
+        vault = PaymentKitaVault(_vault);
+        gateway = PaymentKitaGateway(_gateway);
         router = _router;
         _HYPERBRIDGE_HOST = _host;
     }

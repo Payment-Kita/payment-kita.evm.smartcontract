@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "forge-std/Script.sol";
-import "../src/PayChainGateway.sol";
+import "../src/PaymentKitaGateway.sol";
 import "../src/TokenSwapper.sol";
 import "../src/integrations/hyperbridge/HyperbridgeSender.sol";
 import "../src/interfaces/ISwapper.sol";
@@ -18,7 +18,7 @@ contract CheckBaseConfig is Script {
         // 1. Get Gateway
         address gatewayAddress = address(sender.gateway());
         console.log("Gateway Address:", gatewayAddress);
-        PayChainGateway gateway = PayChainGateway(gatewayAddress);
+        PaymentKitaGateway gateway = PaymentKitaGateway(gatewayAddress);
 
         // 2. Get Swapper
         ISwapper swapper = gateway.swapper();
@@ -74,7 +74,7 @@ contract CheckBaseConfig is Script {
         address vaultAddress = address(tokenSwapper.vault());
         console.log("Swapper Vault:", vaultAddress);
 
-        try PayChainVault(vaultAddress).authorizedSpenders(address(tokenSwapper)) returns (bool authorized) {
+        try PaymentKitaVault(vaultAddress).authorizedSpenders(address(tokenSwapper)) returns (bool authorized) {
             console.log("TokenSwapper Authorized on Vault:", authorized);
         } catch {
              console.log("Failed to check authorization (maybe incorrect vault interface or address)");

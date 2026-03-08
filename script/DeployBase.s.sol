@@ -45,10 +45,6 @@ contract DeployBase is DeployCommon {
             swapper.setV3Pool(idrx, usdc, 100);
             console.log("Configured IDRX/USDC V3 pool");
         }
-        if (usdc != address(0) && wbtc != address(0)) {
-            swapper.setV3Pool(usdc, wbtc, 100);
-            console.log("Configured USDC/WBTC V3 pool");
-        }
         if (usdc != address(0) && weth != address(0)) {
             swapper.setV3Pool(usdc, weth, 100);
             console.log("Configured USDC/WETH V3 pool");
@@ -61,19 +57,40 @@ contract DeployBase is DeployCommon {
             swapper.setV3Pool(usdc, usde, 100);
             console.log("Configured USDC/USDe V3 pool");
         }
-        if (usdc != address(0) && cbeth != address(0)) {
-            swapper.setV3Pool(usdc, cbeth, 500);
-            console.log("Configured USDC/cbETH V3 pool");
-        }
-
         // 3. Configure Multi-hop Paths
-        if (wbtc != address(0) && idrx != address(0)) {
-            address[] memory pathWbtcIdrx = new address[](3);
+        if (usdc != address(0) && cbbtc != address(0) && wbtc != address(0)) {
+            address[] memory pathUsdcWbtc = new address[](3);
+            pathUsdcWbtc[0] = usdc;
+            pathUsdcWbtc[1] = cbbtc;
+            pathUsdcWbtc[2] = wbtc;
+            swapper.setMultiHopPath(usdc, wbtc, pathUsdcWbtc);
+            console.log("Configured USDC -> cbBTC -> WBTC");
+        }
+        if (usdc != address(0) && weth != address(0) && cbeth != address(0)) {
+            address[] memory pathUsdcCbeth = new address[](3);
+            pathUsdcCbeth[0] = usdc;
+            pathUsdcCbeth[1] = weth;
+            pathUsdcCbeth[2] = cbeth;
+            swapper.setMultiHopPath(usdc, cbeth, pathUsdcCbeth);
+            console.log("Configured USDC -> WETH -> cbETH");
+        }
+        if (wbtc != address(0) && cbbtc != address(0) && usdc != address(0) && idrx != address(0)) {
+            address[] memory pathWbtcIdrx = new address[](4);
             pathWbtcIdrx[0] = wbtc;
-            pathWbtcIdrx[1] = usdc;
-            pathWbtcIdrx[2] = idrx;
+            pathWbtcIdrx[1] = cbbtc;
+            pathWbtcIdrx[2] = usdc;
+            pathWbtcIdrx[3] = idrx;
             swapper.setMultiHopPath(wbtc, idrx, pathWbtcIdrx);
-            console.log("Configured WBTC -> USDC -> IDRX");
+            console.log("Configured WBTC -> cbBTC -> USDC -> IDRX");
+        }
+        if (cbeth != address(0) && weth != address(0) && usdc != address(0) && idrx != address(0)) {
+            address[] memory pathCbethIdrx = new address[](4);
+            pathCbethIdrx[0] = cbeth;
+            pathCbethIdrx[1] = weth;
+            pathCbethIdrx[2] = usdc;
+            pathCbethIdrx[3] = idrx;
+            swapper.setMultiHopPath(cbeth, idrx, pathCbethIdrx);
+            console.log("Configured cbETH -> WETH -> USDC -> IDRX");
         }
         if (idrx != address(0) && weth != address(0)) {
             address[] memory pathIdrxWeth = new address[](3);

@@ -2,8 +2,8 @@
 pragma solidity ^0.8.20;
 
 import "./OApp.sol";
-import "../../PayChainGateway.sol";
-import "../../vaults/PayChainVault.sol";
+import "../../PaymentKitaGateway.sol";
+import "../../vaults/PaymentKitaVault.sol";
 import "../../TokenSwapper.sol";
 
 /**
@@ -16,8 +16,8 @@ contract LayerZeroReceiverAdapter is OApp {
 
     // ============ State Variables ============
 
-    PayChainGateway public gateway;
-    PayChainVault public vault;
+    PaymentKitaGateway public gateway;
+    PaymentKitaVault public vault;
     TokenSwapper public swapper;
 
     mapping(uint32 => uint64) public inboundNonces;
@@ -44,8 +44,8 @@ contract LayerZeroReceiverAdapter is OApp {
     // ============ Constructor ============
 
     constructor(address _endpoint, address _gateway, address _vault) OApp(_endpoint, msg.sender) {
-        gateway = PayChainGateway(_gateway);
-        vault = PayChainVault(_vault);
+        gateway = PaymentKitaGateway(_gateway);
+        vault = PaymentKitaVault(_vault);
     }
 
     // ============ Admin Functions ============

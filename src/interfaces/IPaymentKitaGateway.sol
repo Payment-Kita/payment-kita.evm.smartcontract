@@ -2,11 +2,11 @@
 pragma solidity ^0.8.20;
 
 /**
- * @title IPayChain
- * @notice Interface for PayChain cross-chain payment gateway
- * @dev Base interface for all PayChain implementations
+ * @title IPaymentKita
+ * @notice Interface for PaymentKita cross-chain payment gateway
+ * @dev Base interface for all PaymentKita implementations
  */
-interface IPayChainGateway {
+interface IPaymentKitaGateway {
     enum PaymentMode {
         REGULAR,
         PRIVACY
@@ -95,40 +95,16 @@ interface IPayChainGateway {
 
     // ============ Functions ============
 
-    function createPayment(
-        bytes calldata destChainId,
-        bytes calldata receiver,
-        address sourceToken,
-        address destToken,
-        uint256 amount
+    function createPayment(PaymentRequestV2 calldata req) external payable returns (bytes32 paymentId);
+
+    function createPaymentPrivate(
+        PaymentRequestV2 calldata req,
+        PrivateRouting calldata privacy
     ) external payable returns (bytes32 paymentId);
 
-    /// @notice Create cross-chain payment with slippage protection
-    /// @param destChainId Destination chain ID (CAIP-2 encoded)
-    /// @param receiver Receiver address (encoded)
-    /// @param sourceToken Source token address
-    /// @param destToken Destination token address
-    /// @param amount Payment amount
-    /// @param minAmountOut Minimum acceptable output amount (slippage protection)
-    function createPaymentWithSlippage(
-        bytes calldata destChainId,
-        bytes calldata receiver,
-        address sourceToken,
-        address destToken,
-        uint256 amount,
-        uint256 minAmountOut
-    ) external payable returns (bytes32 paymentId);
+    function createPaymentDefaultBridge(PaymentRequestV2 calldata req) external payable returns (bytes32 paymentId);
 
     function executePayment(bytes32 paymentId) external payable;
-
-    function createPaymentRequest(
-        address receiver,
-        address token,
-        uint256 amount,
-        string calldata description
-    ) external returns (bytes32 requestId);
-
-    function payRequest(bytes32 requestId) external;
 
     function processRefund(bytes32 paymentId) external;
 
@@ -136,22 +112,9 @@ interface IPayChainGateway {
         bytes32 paymentId
     ) external view returns (Payment memory);
 
-    function isRequestExpired(bytes32 requestId) external view returns (bool);
-    
     function retryMessage(bytes32 messageId) external;
 
-    // ============ Phase-0 V2 (non-breaking) ============
-
-    function createPaymentV2(PaymentRequestV2 calldata req) external payable returns (bytes32 paymentId);
-
-    function createPaymentPrivateV2(
-        PaymentRequestV2 calldata req,
-        PrivateRouting calldata privacy
-    ) external payable returns (bytes32 paymentId);
-
-    function createPaymentV2DefaultBridge(PaymentRequestV2 calldata req) external payable returns (bytes32 paymentId);
-
-    function quotePaymentCostV2(
+    function quotePaymentCost(
         PaymentRequestV2 calldata req
     )
         external
@@ -165,7 +128,7 @@ interface IPayChainGateway {
             string memory bridgeQuoteReason
         );
 
-    function previewApprovalV2(
+    function previewApproval(
         PaymentRequestV2 calldata req
     ) external view returns (address approvalToken, uint256 approvalAmount, uint256 requiredNativeFee);
 }

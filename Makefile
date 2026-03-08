@@ -18,13 +18,20 @@
 	set-bridge-token-dry set-bridge-token-broadcast check-bridge-token \
 	set-v1-status-dry set-v1-status-broadcast check-v1-status \
 	validate-gateway-v2-dry \
+	set-fee-strategy-dry set-fee-strategy-broadcast validate-fee-strategy-dry \
+	validate-gateway-selector-gate \
+	validate-bytecode-gate validate-security-regression validate-phase7-gate \
+	deploy-gateway-modular-dry deploy-gateway-modular-broadcast \
+	deploy-gateway-modular-v2-dry deploy-gateway-modular-v2-broadcast deploy-gateway-modular-v2-verify \
+	wire-gateway-modules-dry wire-gateway-modules-broadcast \
+	validate-gateway-modular-dry validate-gateway-compat-dry \
 	ccip-rotate-dry ccip-rotate-broadcast ccip-rotate-verify ccip-rotate
 
 VERBOSITY ?= -vvvv
 SLOW ?= --slow
 
 help:
-	@echo "Pay-Chain EVM deploy commands"
+	@echo "Payment-Kita EVM deploy commands"
 	@echo ""
 	@echo "Core:"
 	@echo "  make env-check             - check required env vars"
@@ -91,13 +98,37 @@ help:
 	@echo "  make set-bridge-token-broadcast"
 	@echo "  make check-bridge-token"
 	@echo ""
-	@echo "Gateway V1 rollout status (Phase 5/6):"
+	@echo "Gateway V1 status scripts (legacy/optional, V2 gateway may not support):"
 	@echo "  make set-v1-status-dry         - requires GATEWAY_V1_STATUS_* env"
 	@echo "  make set-v1-status-broadcast"
 	@echo "  make check-v1-status"
 	@echo ""
 	@echo "Gateway V2 readiness gate (Phase 7):"
 	@echo "  make validate-gateway-v2-dry   - requires GW_VALIDATE_* env"
+	@echo ""
+	@echo "Gateway fee strategy rollout (Phase 5):"
+	@echo "  make set-fee-strategy-dry      - requires GW_FEE_* env"
+	@echo "  make set-fee-strategy-broadcast"
+	@echo "  make validate-fee-strategy-dry"
+	@echo ""
+	@echo "Gateway ABI/selector gate (Phase 6):"
+	@echo "  make validate-gateway-selector-gate"
+	@echo ""
+	@echo "Gateway bytecode/security gate (Phase 7):"
+	@echo "  make validate-bytecode-gate      - enforce EIP-170 + runtime margin"
+	@echo "  make validate-security-regression - run core gateway/adapter/fee suites"
+	@echo "  make validate-phase7-gate         - run both gates"
+	@echo ""
+	@echo "Gateway modular rollout (Phase 6):"
+	@echo "  make deploy-gateway-modular-dry"
+	@echo "  make deploy-gateway-modular-broadcast"
+	@echo "  make deploy-gateway-modular-v2-dry"
+	@echo "  make deploy-gateway-modular-v2-broadcast"
+	@echo "  make deploy-gateway-modular-v2-verify"
+	@echo "  make wire-gateway-modules-dry"
+	@echo "  make wire-gateway-modules-broadcast"
+	@echo "  make validate-gateway-modular-dry"
+	@echo "  make validate-gateway-compat-dry"
 	@echo ""
 	@echo "CCIP adapter rotation (deploy sender+receiver baru, register+auth+trust):"
 	@echo "  make ccip-rotate-dry          - profile-based (CCIP_ROTATE_PROFILE)"
@@ -283,7 +314,7 @@ redeploy-hb-sender: redeploy-hb-sender-verify
 redeploy-gateway-v2-dry:
 	@test -n "$(PRIVATE_KEY)" || (echo "Missing PRIVATE_KEY" && exit 1)
 	@test -n "$(BASE_RPC_URL)" || (echo "Missing BASE_RPC_URL" && exit 1)
-	@forge script script/RedeployPayChainGatewayV2.s.sol:RedeployPayChainGatewayV2 \
+	@forge script script/RedeployPaymentKitaGatewayV2.s.sol:RedeployPaymentKitaGatewayV2 \
 		--rpc-url $(BASE_RPC_URL) \
 		--private-key $(PRIVATE_KEY) \
 		$(VERBOSITY)
@@ -292,7 +323,7 @@ redeploy-gateway-v2:
 	@test -n "$(PRIVATE_KEY)" || (echo "Missing PRIVATE_KEY" && exit 1)
 	@test -n "$(BASE_RPC_URL)" || (echo "Missing BASE_RPC_URL" && exit 1)
 	@test -n "$(BASESCAN_API_KEY)" || (echo "Missing BASESCAN_API_KEY" && exit 1)
-	@forge script script/RedeployPayChainGatewayV2.s.sol:RedeployPayChainGatewayV2 \
+	@forge script script/RedeployPaymentKitaGatewayV2.s.sol:RedeployPaymentKitaGatewayV2 \
 		--rpc-url $(BASE_RPC_URL) \
 		--private-key $(PRIVATE_KEY) \
 		--broadcast \
@@ -453,6 +484,150 @@ validate-gateway-v2-dry:
 	@test -n "$(GW_VALIDATE_RECEIVER)" || (echo "Missing GW_VALIDATE_RECEIVER" && exit 1)
 	@test -n "$(GW_VALIDATE_AMOUNT)" || (echo "Missing GW_VALIDATE_AMOUNT" && exit 1)
 	@forge script script/ValidateGatewayV2Readiness.s.sol:ValidateGatewayV2Readiness \
+		--rpc-url $(BASE_RPC_URL) \
+		$(VERBOSITY)
+
+set-fee-strategy-dry:
+	@test -n "$(PRIVATE_KEY)" || (echo "Missing PRIVATE_KEY" && exit 1)
+	@test -n "$(BASE_RPC_URL)" || (echo "Missing BASE_RPC_URL" && exit 1)
+	@forge script script/SetGatewayFeeStrategy.s.sol:SetGatewayFeeStrategy \
+		--rpc-url $(BASE_RPC_URL) \
+		--private-key $(PRIVATE_KEY) \
+		$(VERBOSITY)
+
+set-fee-strategy-broadcast:
+	@test -n "$(PRIVATE_KEY)" || (echo "Missing PRIVATE_KEY" && exit 1)
+	@test -n "$(BASE_RPC_URL)" || (echo "Missing BASE_RPC_URL" && exit 1)
+	@forge script script/SetGatewayFeeStrategy.s.sol:SetGatewayFeeStrategy \
+		--rpc-url $(BASE_RPC_URL) \
+		--private-key $(PRIVATE_KEY) \
+		--broadcast \
+		$(VERBOSITY) $(SLOW)
+
+validate-fee-strategy-dry:
+	@test -n "$(BASE_RPC_URL)" || (echo "Missing BASE_RPC_URL" && exit 1)
+	@test -n "$(GW_FEE_GATEWAY)" || (echo "Missing GW_FEE_GATEWAY" && exit 1)
+	@forge script script/ValidateFeeStrategy.s.sol:ValidateFeeStrategy \
+		--rpc-url $(BASE_RPC_URL) \
+		$(VERBOSITY)
+
+validate-gateway-selector-gate:
+	@methods="$$(forge inspect PaymentKitaGateway methodIdentifiers)"; \
+	required_sigs="createPayment((bytes,bytes,address,address,address,uint256,uint256,uint256,uint8,uint8)) createPaymentPrivate((bytes,bytes,address,address,address,uint256,uint256,uint256,uint8,uint8),(bytes32,address)) createPaymentDefaultBridge((bytes,bytes,address,address,address,uint256,uint256,uint256,uint8,uint8)) quotePaymentCost((bytes,bytes,address,address,address,uint256,uint256,uint256,uint8,uint8)) previewApproval((bytes,bytes,address,address,address,uint256,uint256,uint256,uint8,uint8))"; \
+	forbidden_sigs="createPayment(bytes,bytes,address,address,uint256) createPaymentWithSlippage(bytes,bytes,address,address,uint256,uint256) createPaymentRequest(address,address,uint256,string) payRequest(bytes32) isRequestExpired(bytes32) setV1LaneDisabled(string,bool) setV1GlobalDisabled(bool) v1DisabledGlobal() v1DisabledByDestCaip2(string)"; \
+	for sig in $$required_sigs; do \
+		echo "$$methods" | grep -F "$$sig" >/dev/null || { echo "Selector gate failed: missing required method '$$sig'"; exit 1; }; \
+	done; \
+	for sig in $$forbidden_sigs; do \
+		if echo "$$methods" | grep -F "$$sig" >/dev/null; then \
+			echo "Selector gate failed: legacy method still present '$$sig'"; \
+			exit 1; \
+		fi; \
+	done; \
+	echo "Selector gate passed: final methods present, legacy methods absent"
+
+validate-bytecode-gate:
+	@report="$$(forge build --sizes)"; \
+	echo "$$report" >/tmp/paymentkita-forge-sizes.txt; \
+	line="$$(echo "$$report" | rg "PaymentKitaGateway\\s+\\|" | head -n1)"; \
+	[ -n "$$line" ] || { echo "Bytecode gate failed: PaymentKitaGateway row not found"; exit 1; }; \
+	runtime_margin="$$(echo "$$line" | awk -F'|' '{gsub(/[ ,]/, "", $$5); print $$5}')"; \
+	runtime_size="$$(echo "$$line" | awk -F'|' '{gsub(/[ ,]/, "", $$3); print $$3}')"; \
+	[ -n "$$runtime_margin" ] || { echo "Bytecode gate failed: runtime margin parse failed"; exit 1; }; \
+	[ -n "$$runtime_size" ] || { echo "Bytecode gate failed: runtime size parse failed"; exit 1; }; \
+	[ "$$runtime_size" -le 24576 ] || { echo "Bytecode gate failed: runtime size $$runtime_size exceeds EIP-170 limit"; exit 1; }; \
+	[ "$$runtime_margin" -gt 500 ] || { echo "Bytecode gate failed: runtime margin $$runtime_margin <= 500"; exit 1; }; \
+	echo "Bytecode gate passed: runtime_size=$$runtime_size runtime_margin=$$runtime_margin"
+
+validate-security-regression:
+	@forge test --offline --match-path test/PaymentKitaGateway.V2Phase1.t.sol
+	@forge test --offline --match-path test/FeePolicyAndStrategy.t.sol
+	@forge test --offline --match-path test/BridgeAdapters.t.sol
+	@forge test --offline --match-path test/PaymentKitaGateway.Revert.t.sol
+
+validate-phase7-gate:
+	@$(MAKE) validate-bytecode-gate
+	@$(MAKE) validate-security-regression
+
+deploy-gateway-modular-dry:
+	@test -n "$(PRIVATE_KEY)" || (echo "Missing PRIVATE_KEY" && exit 1)
+	@test -n "$(BASE_RPC_URL)" || (echo "Missing BASE_RPC_URL" && exit 1)
+	@forge script script/DeployGatewayModular.s.sol:DeployGatewayModular \
+		--rpc-url $(BASE_RPC_URL) \
+		--private-key $(PRIVATE_KEY) \
+		$(VERBOSITY)
+
+deploy-gateway-modular-broadcast:
+	@test -n "$(PRIVATE_KEY)" || (echo "Missing PRIVATE_KEY" && exit 1)
+	@test -n "$(BASE_RPC_URL)" || (echo "Missing BASE_RPC_URL" && exit 1)
+	@forge script script/DeployGatewayModular.s.sol:DeployGatewayModular \
+		--rpc-url $(BASE_RPC_URL) \
+		--private-key $(PRIVATE_KEY) \
+		--broadcast \
+		$(VERBOSITY) $(SLOW)
+
+deploy-gateway-modular-v2-dry:
+	@test -n "$(PRIVATE_KEY)" || (echo "Missing PRIVATE_KEY" && exit 1)
+	@test -n "$(BASE_RPC_URL)" || (echo "Missing BASE_RPC_URL" && exit 1)
+	@test -n "$(GWV2_OLD_GATEWAY)" || (echo "Missing GWV2_OLD_GATEWAY" && exit 1)
+	@forge script script/DeployGatewayModularV2.s.sol:DeployGatewayModularV2 \
+		--rpc-url $(BASE_RPC_URL) \
+		--private-key $(PRIVATE_KEY) \
+		$(VERBOSITY)
+
+deploy-gateway-modular-v2-broadcast:
+	@test -n "$(PRIVATE_KEY)" || (echo "Missing PRIVATE_KEY" && exit 1)
+	@test -n "$(BASE_RPC_URL)" || (echo "Missing BASE_RPC_URL" && exit 1)
+	@test -n "$(GWV2_OLD_GATEWAY)" || (echo "Missing GWV2_OLD_GATEWAY" && exit 1)
+	@forge script script/DeployGatewayModularV2.s.sol:DeployGatewayModularV2 \
+		--rpc-url $(BASE_RPC_URL) \
+		--private-key $(PRIVATE_KEY) \
+		--broadcast \
+		$(VERBOSITY) $(SLOW)
+
+deploy-gateway-modular-v2-verify:
+	@test -n "$(PRIVATE_KEY)" || (echo "Missing PRIVATE_KEY" && exit 1)
+	@test -n "$(BASE_RPC_URL)" || (echo "Missing BASE_RPC_URL" && exit 1)
+	@test -n "$(BASESCAN_API_KEY)" || (echo "Missing BASESCAN_API_KEY" && exit 1)
+	@test -n "$(GWV2_OLD_GATEWAY)" || (echo "Missing GWV2_OLD_GATEWAY" && exit 1)
+	@forge script script/DeployGatewayModularV2.s.sol:DeployGatewayModularV2 \
+		--rpc-url $(BASE_RPC_URL) \
+		--private-key $(PRIVATE_KEY) \
+		--broadcast \
+		--verify \
+		--etherscan-api-key $(BASESCAN_API_KEY) \
+		$(VERBOSITY) $(SLOW)
+
+wire-gateway-modules-dry:
+	@test -n "$(PRIVATE_KEY)" || (echo "Missing PRIVATE_KEY" && exit 1)
+	@test -n "$(BASE_RPC_URL)" || (echo "Missing BASE_RPC_URL" && exit 1)
+	@test -n "$(GW_MOD_GATEWAY)" || (echo "Missing GW_MOD_GATEWAY" && exit 1)
+	@forge script script/WireGatewayModules.s.sol:WireGatewayModules \
+		--rpc-url $(BASE_RPC_URL) \
+		--private-key $(PRIVATE_KEY) \
+		$(VERBOSITY)
+
+wire-gateway-modules-broadcast:
+	@test -n "$(PRIVATE_KEY)" || (echo "Missing PRIVATE_KEY" && exit 1)
+	@test -n "$(BASE_RPC_URL)" || (echo "Missing BASE_RPC_URL" && exit 1)
+	@test -n "$(GW_MOD_GATEWAY)" || (echo "Missing GW_MOD_GATEWAY" && exit 1)
+	@forge script script/WireGatewayModules.s.sol:WireGatewayModules \
+		--rpc-url $(BASE_RPC_URL) \
+		--private-key $(PRIVATE_KEY) \
+		--broadcast \
+		$(VERBOSITY) $(SLOW)
+
+validate-gateway-modular-dry:
+	@test -n "$(BASE_RPC_URL)" || (echo "Missing BASE_RPC_URL" && exit 1)
+	@test -n "$(GW_MOD_GATEWAY)" || (echo "Missing GW_MOD_GATEWAY" && exit 1)
+	@forge script script/ValidateGatewayModularReadiness.s.sol:ValidateGatewayModularReadiness \
+		--rpc-url $(BASE_RPC_URL) \
+		$(VERBOSITY)
+
+validate-gateway-compat-dry:
+	@test -n "$(BASE_RPC_URL)" || (echo "Missing BASE_RPC_URL" && exit 1)
+	@test -n "$(GW_COMPAT_GATEWAY)" || (echo "Missing GW_COMPAT_GATEWAY" && exit 1)
+	@forge script script/ValidateGatewayCompatibility.s.sol:ValidateGatewayCompatibility \
 		--rpc-url $(BASE_RPC_URL) \
 		$(VERBOSITY)
 

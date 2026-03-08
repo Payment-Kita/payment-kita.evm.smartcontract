@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "forge-std/Script.sol";
-import "../src/PayChainGateway.sol";
+import "../src/PaymentKitaGateway.sol";
 
 interface IVaultGatewayV2 {
     function setAuthorizedSpender(address spender, bool authorized) external;
@@ -21,7 +21,7 @@ interface IGatewayConfigSource {
         returns (bool enabled, uint256 perByteRate, uint256 overheadBytes, uint256 minFee, uint256 maxFee);
 }
 
-contract RedeployPayChainGatewayV2 is Script {
+contract RedeployPaymentKitaGatewayV2 is Script {
     function run() external {
         uint256 pk = vm.envUint("PRIVATE_KEY");
 
@@ -52,7 +52,7 @@ contract RedeployPayChainGatewayV2 is Script {
 
         vm.startBroadcast(pk);
 
-        PayChainGateway gatewayV2 = new PayChainGateway(vault, router, tokenRegistry, feeRecipient);
+        PaymentKitaGateway gatewayV2 = new PaymentKitaGateway(vault, router, tokenRegistry, feeRecipient);
 
         // Authorize new gateway in vault so it can pull/push user funds.
         IVaultGatewayV2(vault).setAuthorizedSpender(address(gatewayV2), true);
@@ -99,7 +99,7 @@ contract RedeployPayChainGatewayV2 is Script {
 
         vm.stopBroadcast();
 
-        console.log("RedeployPayChainGatewayV2 complete");
+        console.log("RedeployPaymentKitaGatewayV2 complete");
         console.log("GatewayV2:", address(gatewayV2));
         console.log("Vault:", vault);
         console.log("Router:", router);
@@ -112,7 +112,7 @@ contract RedeployPayChainGatewayV2 is Script {
         }
     }
 
-    function _copyConfig(PayChainGateway gatewayV2, address oldGateway) internal {
+    function _copyConfig(PaymentKitaGateway gatewayV2, address oldGateway) internal {
         IGatewayConfigSource old = IGatewayConfigSource(oldGateway);
 
         address oldSwapper = old.swapper();

@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 
 import "forge-std/Test.sol";
 import "../src/integrations/hyperbridge/HyperbridgeSender.sol";
-import "../src/vaults/PayChainVault.sol";
+import "../src/vaults/PaymentKitaVault.sol";
 
 import "../src/interfaces/IBridgeAdapter.sol";
 
@@ -84,8 +84,8 @@ contract MockHost {
     receive() external payable {}
 }
 
-contract MockVault is PayChainVault {
-    constructor(address _token) PayChainVault() {}
+contract MockVault is PaymentKitaVault {
+    constructor(address _token) PaymentKitaVault() {}
 }
 
 contract MockERC20 is IERC20 {

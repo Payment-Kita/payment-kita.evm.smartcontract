@@ -2,11 +2,11 @@
 pragma solidity ^0.8.20;
 
 import "forge-std/Test.sol";
-import "../../src/PayChainRouter.sol";
+import "../../src/PaymentKitaRouter.sol";
 import "../../src/interfaces/IBridgeAdapter.sol";
 
 contract PolygonFeeRepro is Test {
-    PayChainRouter router = PayChainRouter(0xb4a911eC34eDaaEFC393c52bbD926790B9219df4);
+    PaymentKitaRouter router = PaymentKitaRouter(0xb4a911eC34eDaaEFC393c52bbD926790B9219df4);
     string destChainId = "eip155:8453";
     uint8 bridgeType = 0; // Hyperbridge
     bool runForkRepro;

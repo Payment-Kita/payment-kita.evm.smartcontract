@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 
 import "forge-std/Script.sol";
 import "../src/integrations/hyperbridge/HyperbridgeSender.sol";
-import "../src/PayChainRouter.sol";
+import "../src/PaymentKitaRouter.sol";
 
 contract DeployPolygonHyperbridgeFix is Script {
     function run() external {
@@ -38,10 +38,10 @@ contract DeployPolygonHyperbridgeFix is Script {
         
         console.log("Configured Hyperbridge Sender for chain:", chainId);
 
-        // 4. Update PayChainRouter
+        // 4. Update PaymentKitaRouter
         // AdapterType 0 for Hyperbridge
-        PayChainRouter(routerAddress).registerAdapter(chainId, 0, address(newSender));
-        console.log("Updated PayChainRouter adapter for chain:", chainId);
+        PaymentKitaRouter(routerAddress).registerAdapter(chainId, 0, address(newSender));
+        console.log("Updated PaymentKitaRouter adapter for chain:", chainId);
 
         vm.stopBroadcast();
     }

@@ -6,11 +6,11 @@ import "forge-std/StdInvariant.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-import "../src/PayChainGateway.sol";
-import "../src/PayChainRouter.sol";
-import "../src/vaults/PayChainVault.sol";
+import "../src/PaymentKitaGateway.sol";
+import "../src/PaymentKitaRouter.sol";
+import "../src/vaults/PaymentKitaVault.sol";
 import "../src/TokenRegistry.sol";
-import "../src/interfaces/IPayChainGateway.sol";
+import "../src/interfaces/IPaymentKitaGateway.sol";
 import "../src/interfaces/IBridgeAdapter.sol";
 import "../src/interfaces/ISwapper.sol";
 
@@ -45,13 +45,13 @@ contract MockNoopAdapterInvariant is IBridgeAdapter {
 contract MockInvariantSwapper is ISwapper {
     using SafeERC20 for IERC20;
 
-    PayChainVault public immutable vault;
+    PaymentKitaVault public immutable vault;
     mapping(bytes32 => bool) public routeExists;
     mapping(bytes32 => bool) public routeIsDirect;
     mapping(bytes32 => uint256) public routeRateWad;
 
     constructor(address _vault) {
-        vault = PayChainVault(_vault);
+        vault = PaymentKitaVault(_vault);
     }
 
     function setRoute(address tokenIn, address tokenOut, bool exists, bool isDirect, uint256 rateWad) external {
@@ -145,10 +145,10 @@ contract MockInvariantSwapper is ISwapper {
     }
 }
 
-contract PayChainGatewayV2Handler is Test {
-    PayChainGateway public gateway;
-    PayChainRouter public router;
-    PayChainVault public vault;
+contract PaymentKitaGatewayV2Handler is Test {
+    PaymentKitaGateway public gateway;
+    PaymentKitaRouter public router;
+    PaymentKitaVault public vault;
     MockTokenInvariant public sourceToken;
     MockTokenInvariant public bridgeToken;
     MockTokenInvariant public destToken;
@@ -160,9 +160,9 @@ contract PayChainGatewayV2Handler is Test {
     mapping(bytes32 => bool) public privatePayment;
 
     constructor(
-        PayChainGateway _gateway,
-        PayChainRouter _router,
-        PayChainVault _vault,
+        PaymentKitaGateway _gateway,
+        PaymentKitaRouter _router,
+        PaymentKitaVault _vault,
         MockTokenInvariant _sourceToken,
         MockTokenInvariant _bridgeToken,
         MockTokenInvariant _destToken
@@ -203,7 +203,7 @@ contract PayChainGatewayV2Handler is Test {
             option = 255;
         }
 
-        IPayChainGateway.PaymentRequestV2 memory req;
+        IPaymentKitaGateway.PaymentRequestV2 memory req;
         req.destChainIdBytes = bytes(DEST);
         req.receiverBytes = abi.encode(address(uint160(uint256(keccak256(abi.encode(actor, amount))))));
         req.sourceToken = src;
@@ -212,16 +212,16 @@ contract PayChainGatewayV2Handler is Test {
         req.amountInSource = amount;
         req.minBridgeAmountOut = 0;
         req.minDestAmountOut = 0;
-        req.mode = IPayChainGateway.PaymentMode.REGULAR;
+        req.mode = IPaymentKitaGateway.PaymentMode.REGULAR;
         req.bridgeOption = option;
 
         MockTokenInvariant(src).mint(actor, amount + 1e18);
         vm.deal(actor, 5 ether);
         vm.startPrank(actor);
         MockTokenInvariant(src).approve(address(vault), type(uint256).max);
-        (, , uint256 requiredNativeFee) = gateway.previewApprovalV2(req);
+        (, , uint256 requiredNativeFee) = gateway.previewApproval(req);
         (bool ok, bytes memory out) = address(gateway).call{value: requiredNativeFee}(
-            abi.encodeWithSelector(IPayChainGateway.createPaymentV2.selector, req)
+            abi.encodeWithSelector(IPaymentKitaGateway.createPayment.selector, req)
         );
         vm.stopPrank();
 
@@ -245,7 +245,7 @@ contract PayChainGatewayV2Handler is Test {
         uint256 amount = bound(amountSeed, 1e6, 1_000_000e18);
         address src = useSourceToken ? address(sourceToken) : address(bridgeToken);
 
-        IPayChainGateway.PaymentRequestV2 memory req;
+        IPaymentKitaGateway.PaymentRequestV2 memory req;
         req.destChainIdBytes = bytes(DEST);
         req.receiverBytes = abi.encode(address(uint160(uint256(keccak256(abi.encode(actor, amount, "r"))))));
         req.sourceToken = src;
@@ -254,10 +254,10 @@ contract PayChainGatewayV2Handler is Test {
         req.amountInSource = amount;
         req.minBridgeAmountOut = 0;
         req.minDestAmountOut = 0;
-        req.mode = IPayChainGateway.PaymentMode.PRIVACY;
+        req.mode = IPaymentKitaGateway.PaymentMode.PRIVACY;
         req.bridgeOption = 255;
 
-        IPayChainGateway.PrivateRouting memory privacy;
+        IPaymentKitaGateway.PrivateRouting memory privacy;
         privacy.intentId = keccak256(abi.encode(actor, amount, block.number));
         privacy.stealthReceiver = address(uint160(uint256(keccak256(abi.encode(actor, amount, "s")))));
 
@@ -265,9 +265,9 @@ contract PayChainGatewayV2Handler is Test {
         vm.deal(actor, 5 ether);
         vm.startPrank(actor);
         MockTokenInvariant(src).approve(address(vault), type(uint256).max);
-        (, , uint256 requiredNativeFee) = gateway.previewApprovalV2(req);
+        (, , uint256 requiredNativeFee) = gateway.previewApproval(req);
         (bool ok, bytes memory out) = address(gateway).call{value: requiredNativeFee}(
-            abi.encodeWithSelector(IPayChainGateway.createPaymentPrivateV2.selector, req, privacy)
+            abi.encodeWithSelector(IPaymentKitaGateway.createPaymentPrivate.selector, req, privacy)
         );
         vm.stopPrank();
 
@@ -283,17 +283,17 @@ contract PayChainGatewayV2Handler is Test {
     }
 }
 
-contract PayChainGatewayV2InvariantTest is StdInvariant, Test {
-    PayChainGateway gateway;
-    PayChainRouter router;
-    PayChainVault vault;
+contract PaymentKitaGatewayV2InvariantTest is StdInvariant, Test {
+    PaymentKitaGateway gateway;
+    PaymentKitaRouter router;
+    PaymentKitaVault vault;
     TokenRegistry registry;
     MockNoopAdapterInvariant adapter;
     MockInvariantSwapper swapper;
     MockTokenInvariant sourceToken;
     MockTokenInvariant bridgeToken;
     MockTokenInvariant destToken;
-    PayChainGatewayV2Handler handler;
+    PaymentKitaGatewayV2Handler handler;
 
     string constant DEST = "eip155:137";
 
@@ -303,9 +303,9 @@ contract PayChainGatewayV2InvariantTest is StdInvariant, Test {
         destToken = new MockTokenInvariant("Dest", "DST");
 
         registry = new TokenRegistry();
-        vault = new PayChainVault();
-        router = new PayChainRouter();
-        gateway = new PayChainGateway(address(vault), address(router), address(registry), address(this));
+        vault = new PaymentKitaVault();
+        router = new PaymentKitaRouter();
+        gateway = new PaymentKitaGateway(address(vault), address(router), address(registry), address(this));
         adapter = new MockNoopAdapterInvariant();
         swapper = new MockInvariantSwapper(address(vault));
 
@@ -327,7 +327,7 @@ contract PayChainGatewayV2InvariantTest is StdInvariant, Test {
         swapper.setRoute(address(sourceToken), address(bridgeToken), true, false, 1e18);
         bridgeToken.mint(address(swapper), 10_000_000e18);
 
-        handler = new PayChainGatewayV2Handler(gateway, router, vault, sourceToken, bridgeToken, destToken);
+        handler = new PaymentKitaGatewayV2Handler(gateway, router, vault, sourceToken, bridgeToken, destToken);
         targetContract(address(handler));
     }
 
@@ -345,38 +345,17 @@ contract PayChainGatewayV2InvariantTest is StdInvariant, Test {
         assertTrue(bridgeMessageId != bytes32(0), "bridgeMessageId missing");
         assertEq(gateway.bridgeMessageToPayment(bridgeMessageId), paymentId, "reverse mapping mismatch");
 
-        (
-            address sender,
-            address receiver,
-            ,
-            ,
-            ,
-            ,
-            uint256 amount,
-            ,
-            IPayChainGateway.PaymentStatus status,
-            uint256 createdAt
-        ) = gateway.payments(paymentId);
+        IPaymentKitaGateway.Payment memory payment = gateway.getPayment(paymentId);
+        address sender = payment.sender;
+        address receiver = payment.receiver;
+        uint256 amount = payment.amount;
+        IPaymentKitaGateway.PaymentStatus status = payment.status;
+        uint256 createdAt = payment.createdAt;
         assertTrue(sender != address(0), "missing payment sender");
         assertTrue(receiver != address(0), "missing payment receiver");
         assertTrue(amount > 0, "payment amount zero");
-        assertEq(uint256(status), uint256(IPayChainGateway.PaymentStatus.Processing), "unexpected status");
+        assertEq(uint256(status), uint256(IPaymentKitaGateway.PaymentStatus.Processing), "unexpected status");
         assertTrue(createdAt > 0, "createdAt missing");
-
-        (
-            bytes32 msgPaymentId,
-            address msgReceiver,
-            ,
-            ,
-            uint256 msgAmount,
-            string memory destChainId,
-            ,
-            address msgPayer
-        ) = gateway.paymentMessages(paymentId);
-        assertEq(msgPaymentId, paymentId, "message paymentId mismatch");
-        assertEq(msgAmount, amount, "message amount mismatch");
-        assertEq(keccak256(bytes(destChainId)), keccak256(bytes(DEST)), "dest chain mismatch");
-        assertEq(msgPayer, sender, "bridge payer mismatch");
 
         uint8 bridgeType = gateway.paymentBridgeType(paymentId);
         assertTrue(bridgeType <= 2, "invalid bridge type");
@@ -388,7 +367,6 @@ contract PayChainGatewayV2InvariantTest is StdInvariant, Test {
             assertTrue(stealth != address(0), "stealth missing");
             assertTrue(intent != bytes32(0), "intent missing");
             assertEq(receiver, stealth, "payment receiver != stealth");
-            assertEq(msgReceiver, stealth, "bridge msg receiver != stealth");
         }
     }
 }

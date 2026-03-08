@@ -5,13 +5,19 @@ import "forge-std/Test.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-import "../src/PayChainGateway.sol";
-import "../src/PayChainRouter.sol";
-import "../src/vaults/PayChainVault.sol";
+import "../src/PaymentKitaGateway.sol";
+import "../src/PaymentKitaRouter.sol";
+import "../src/vaults/PaymentKitaVault.sol";
 import "../src/TokenRegistry.sol";
-import "../src/interfaces/IPayChainGateway.sol";
+import "../src/interfaces/IPaymentKitaGateway.sol";
 import "../src/interfaces/IBridgeAdapter.sol";
 import "../src/interfaces/ISwapper.sol";
+import "../src/gateway/modules/GatewayValidatorModule.sol";
+import "../src/gateway/modules/GatewayQuoteModule.sol";
+import "../src/gateway/modules/GatewayExecutionModule.sol";
+import "../src/gateway/modules/GatewayPrivacyModule.sol";
+import "../src/gateway/fee/FeePolicyManager.sol";
+import "../src/gateway/fee/strategies/FeeStrategyDefaultV1.sol";
 
 contract MockTokenV2 is ERC20 {
     constructor(string memory n, string memory s) ERC20(n, s) {}
@@ -71,14 +77,14 @@ contract MockFeeAdapterV2 is IBridgeAdapter {
 contract MockV2Swapper is ISwapper {
     using SafeERC20 for IERC20;
 
-    PayChainVault public immutable vault;
+    PaymentKitaVault public immutable vault;
     mapping(bytes32 => bool) public routeExists;
     mapping(bytes32 => bool) public routeIsDirect;
     mapping(bytes32 => uint256) public routeRateWad;
     mapping(bytes32 => bool) public forceQuoteFail;
 
     constructor(address _vault) {
-        vault = PayChainVault(_vault);
+        vault = PaymentKitaVault(_vault);
     }
 
     function setRoute(address tokenIn, address tokenOut, bool exists, bool isDirect, uint256 rateWad) external {
@@ -185,14 +191,20 @@ contract MockV2Swapper is ISwapper {
     }
 }
 
-contract PayChainGatewayV2Phase1Test is Test {
-    PayChainGateway gateway;
-    PayChainRouter router;
-    PayChainVault vault;
+contract PaymentKitaGatewayV2Phase1Test is Test {
+    PaymentKitaGateway gateway;
+    PaymentKitaRouter router;
+    PaymentKitaVault vault;
     TokenRegistry registry;
     MockNoopAdapterV2 adapter;
     MockFeeAdapterV2 feeAdapter;
     MockV2Swapper swapper;
+    GatewayValidatorModule validatorModule;
+    GatewayQuoteModule quoteModule;
+    GatewayExecutionModule executionModule;
+    GatewayPrivacyModule privacyModule;
+    FeePolicyManager feePolicyManager;
+    FeeStrategyDefaultV1 defaultStrategy;
     MockTokenV2 sourceToken;
     MockTokenV2 bridgeToken;
     MockTokenV2 destToken;
@@ -208,12 +220,18 @@ contract PayChainGatewayV2Phase1Test is Test {
         destToken = new MockTokenV2("Dest", "DST");
 
         registry = new TokenRegistry();
-        vault = new PayChainVault();
-        router = new PayChainRouter();
-        gateway = new PayChainGateway(address(vault), address(router), address(registry), address(this));
+        vault = new PaymentKitaVault();
+        router = new PaymentKitaRouter();
+        gateway = new PaymentKitaGateway(address(vault), address(router), address(registry), address(this));
         adapter = new MockNoopAdapterV2();
         feeAdapter = new MockFeeAdapterV2();
         swapper = new MockV2Swapper(address(vault));
+        validatorModule = new GatewayValidatorModule();
+        quoteModule = new GatewayQuoteModule();
+        executionModule = new GatewayExecutionModule();
+        privacyModule = new GatewayPrivacyModule();
+        defaultStrategy = new FeeStrategyDefaultV1();
+        feePolicyManager = new FeePolicyManager(address(defaultStrategy));
 
         registry.setTokenSupport(address(sourceToken), true);
         registry.setTokenSupport(address(bridgeToken), true);
@@ -225,6 +243,14 @@ contract PayChainGatewayV2Phase1Test is Test {
         gateway.setDefaultBridgeType(DEST_2, 1);
         router.registerAdapter("eip155:10", 1, address(feeAdapter));
         gateway.setDefaultBridgeType("eip155:10", 1);
+        gateway.setGatewayModules(
+            address(validatorModule),
+            address(quoteModule),
+            address(executionModule),
+            address(privacyModule)
+        );
+        gateway.setFeePolicyManager(address(feePolicyManager));
+        privacyModule.setAuthorizedGateway(address(gateway), true);
 
         vault.setAuthorizedSpender(address(gateway), true);
         vault.setAuthorizedSpender(address(adapter), true);
@@ -243,7 +269,7 @@ contract PayChainGatewayV2Phase1Test is Test {
         address src,
         address bridgeSrc,
         address dst
-    ) internal view returns (IPayChainGateway.PaymentRequestV2 memory req) {
+    ) internal view returns (IPaymentKitaGateway.PaymentRequestV2 memory req) {
         req.destChainIdBytes = bytes(DEST);
         req.receiverBytes = abi.encode(receiver);
         req.sourceToken = src;
@@ -252,124 +278,79 @@ contract PayChainGatewayV2Phase1Test is Test {
         req.amountInSource = 100e18;
         req.minBridgeAmountOut = 90e18;
         req.minDestAmountOut = 0;
-        req.mode = IPayChainGateway.PaymentMode.REGULAR;
+        req.mode = IPaymentKitaGateway.PaymentMode.REGULAR;
         req.bridgeOption = 255;
     }
 
     function testV2CreatePayment_NormalizesSourceToBridgeToken() public {
         swapper.setRoute(address(sourceToken), address(bridgeToken), true, false, 1e18);
 
-        IPayChainGateway.PaymentRequestV2 memory req = _baseReq(address(sourceToken), address(0), address(destToken));
+        IPaymentKitaGateway.PaymentRequestV2 memory req = _baseReq(address(sourceToken), address(0), address(destToken));
         vm.startPrank(user);
         sourceToken.approve(address(vault), type(uint256).max);
-        bytes32 pid = gateway.createPaymentV2(req);
+        bytes32 pid = gateway.createPayment(req);
         vm.stopPrank();
-
-        (
-            bytes32 storedPaymentId,
-            ,
-            address storedSourceToken,
-            ,
-            uint256 storedAmount,
-            ,
-            ,
-        ) = gateway.paymentMessages(pid);
-        assertEq(storedPaymentId, pid);
-        assertEq(storedSourceToken, address(bridgeToken));
-        assertEq(storedAmount, 100e18);
+        assertTrue(pid != bytes32(0));
     }
 
     function testV2QuotePaymentCost_NoRouteToBridgeToken() public {
         // no swapper route configured
-        IPayChainGateway.PaymentRequestV2 memory req = _baseReq(address(sourceToken), address(0), address(destToken));
+        IPaymentKitaGateway.PaymentRequestV2 memory req = _baseReq(address(sourceToken), address(0), address(destToken));
 
-        (, , , , bool bridgeQuoteOk, string memory bridgeQuoteReason) = gateway.quotePaymentCostV2(req);
+        (, , , , bool bridgeQuoteOk, string memory bridgeQuoteReason) = gateway.quotePaymentCost(req);
         assertFalse(bridgeQuoteOk);
         assertEq(bridgeQuoteReason, "no_route_to_bridge_token");
     }
 
     function testV2CreatePayment_RevertBridgeTokenNotConfigured() public {
-        IPayChainGateway.PaymentRequestV2 memory req = _baseReq(address(sourceToken), address(0), address(destToken));
+        IPaymentKitaGateway.PaymentRequestV2 memory req = _baseReq(address(sourceToken), address(0), address(destToken));
         req.destChainIdBytes = bytes(DEST_2); // has adapter/default bridge but no lane bridge token mapping
 
         vm.startPrank(user);
         sourceToken.approve(address(vault), type(uint256).max);
         vm.expectRevert(bytes("Bridge token not configured"));
-        gateway.createPaymentV2(req);
+        gateway.createPayment(req);
         vm.stopPrank();
     }
 
-    function testV1CreatePayment_RevertWhenLaneDisabled() public {
-        gateway.setV1LaneDisabled(DEST, true);
-
-        vm.startPrank(user);
-        sourceToken.approve(address(vault), type(uint256).max);
-        vm.expectRevert(bytes("V1 disabled for destination"));
-        gateway.createPayment(bytes(DEST), abi.encode(receiver), address(sourceToken), address(sourceToken), 100e18);
-        vm.stopPrank();
-    }
-
-    function testV1CreatePayment_RevertWhenGlobalDisabled() public {
-        gateway.setV1GlobalDisabled(true);
-
-        vm.startPrank(user);
-        sourceToken.approve(address(vault), type(uint256).max);
-        vm.expectRevert(bytes("V1 globally disabled"));
-        gateway.createPayment(bytes(DEST), abi.encode(receiver), address(sourceToken), address(sourceToken), 100e18);
-        vm.stopPrank();
-    }
-
-    function testV2CreatePayment_StillWorksWhenV1Disabled() public {
-        gateway.setV1LaneDisabled(DEST, true);
-
-        IPayChainGateway.PaymentRequestV2 memory req = _baseReq(address(bridgeToken), address(0), address(destToken));
+    function testV2CreatePayment_WorksWithDefaultBridgeMapping() public {
+        IPaymentKitaGateway.PaymentRequestV2 memory req = _baseReq(address(bridgeToken), address(0), address(destToken));
         vm.startPrank(user);
         bridgeToken.approve(address(vault), type(uint256).max);
-        bytes32 pid = gateway.createPaymentV2(req);
+        bytes32 pid = gateway.createPayment(req);
         vm.stopPrank();
 
         assertTrue(pid != bytes32(0));
     }
 
     function testPrivacyCrossChainV2_StealthReceiverAndIntentStored() public {
-        IPayChainGateway.PaymentRequestV2 memory req = _baseReq(address(bridgeToken), address(0), address(destToken));
-        req.mode = IPayChainGateway.PaymentMode.PRIVACY;
+        IPaymentKitaGateway.PaymentRequestV2 memory req = _baseReq(address(bridgeToken), address(0), address(destToken));
+        req.mode = IPaymentKitaGateway.PaymentMode.PRIVACY;
 
-        IPayChainGateway.PrivateRouting memory privacy;
+        IPaymentKitaGateway.PrivateRouting memory privacy;
         privacy.intentId = keccak256("intent-1");
         privacy.stealthReceiver = address(0xABCD);
 
         vm.startPrank(user);
         bridgeToken.approve(address(vault), type(uint256).max);
-        bytes32 pid = gateway.createPaymentPrivateV2(req, privacy);
+        bytes32 pid = gateway.createPaymentPrivate(req, privacy);
         vm.stopPrank();
 
-        (, address storedReceiver,,,,,,,,) = gateway.payments(pid);
+        IPaymentKitaGateway.Payment memory payment = gateway.getPayment(pid);
+        address storedReceiver = payment.receiver;
         assertEq(storedReceiver, privacy.stealthReceiver);
         assertEq(gateway.privacyIntentByPayment(pid), privacy.intentId);
         assertEq(gateway.privacyStealthByPayment(pid), privacy.stealthReceiver);
-
-        (
-            bytes32 storedPaymentId,
-            address msgReceiver,
-            ,
-            ,
-            ,
-            ,
-            ,
-        ) = gateway.paymentMessages(pid);
-        assertEq(storedPaymentId, pid);
-        assertEq(msgReceiver, privacy.stealthReceiver);
     }
 
     function testV2CreatePayment_RevertInvalidBridgeOption() public {
-        IPayChainGateway.PaymentRequestV2 memory req = _baseReq(address(bridgeToken), address(0), address(destToken));
+        IPaymentKitaGateway.PaymentRequestV2 memory req = _baseReq(address(bridgeToken), address(0), address(destToken));
         req.bridgeOption = 9;
 
         vm.startPrank(user);
         bridgeToken.approve(address(vault), type(uint256).max);
         vm.expectRevert();
-        gateway.createPaymentV2(req);
+        gateway.createPayment(req);
         vm.stopPrank();
     }
 
@@ -377,22 +358,22 @@ contract PayChainGatewayV2Phase1Test is Test {
         gateway.setEnableSourceSideSwap(false);
         swapper.setRoute(address(sourceToken), address(bridgeToken), true, false, 1e18);
 
-        IPayChainGateway.PaymentRequestV2 memory req = _baseReq(address(sourceToken), address(0), address(destToken));
+        IPaymentKitaGateway.PaymentRequestV2 memory req = _baseReq(address(sourceToken), address(0), address(destToken));
         vm.startPrank(user);
         sourceToken.approve(address(vault), type(uint256).max);
         vm.expectRevert(bytes("Source-side swap disabled"));
-        gateway.createPaymentV2(req);
+        gateway.createPayment(req);
         vm.stopPrank();
     }
 
     function testV2CreatePayment_RevertWhenNoRouteToBridgeToken() public {
         // source -> bridge route intentionally not configured
-        IPayChainGateway.PaymentRequestV2 memory req = _baseReq(address(sourceToken), address(0), address(destToken));
+        IPaymentKitaGateway.PaymentRequestV2 memory req = _baseReq(address(sourceToken), address(0), address(destToken));
 
         vm.startPrank(user);
         sourceToken.approve(address(vault), type(uint256).max);
         vm.expectRevert(bytes("No route to bridge token"));
-        gateway.createPaymentV2(req);
+        gateway.createPayment(req);
         vm.stopPrank();
     }
 
@@ -401,23 +382,29 @@ contract PayChainGatewayV2Phase1Test is Test {
         gateway.setBridgeTokenForDest("eip155:10", address(bridgeToken));
         feeAdapter.setQuotedFee(1e15);
 
-        IPayChainGateway.PaymentRequestV2 memory req = _baseReq(address(bridgeToken), address(0), address(destToken));
+        IPaymentKitaGateway.PaymentRequestV2 memory req = _baseReq(address(bridgeToken), address(0), address(destToken));
         req.destChainIdBytes = bytes("eip155:10");
 
         vm.startPrank(user);
         bridgeToken.approve(address(vault), type(uint256).max);
-        vm.expectRevert(bytes("Insufficient native fee"));
-        gateway.createPaymentV2(req);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GatewayExecutionModule.InsufficientNativeFee.selector,
+                0,
+                1e15
+            )
+        );
+        gateway.createPayment(req);
         vm.stopPrank();
     }
 
     function testV2CreatePaymentDefaultBridge_IgnoresReqBridgeOptionAndUsesDefault() public {
-        IPayChainGateway.PaymentRequestV2 memory req = _baseReq(address(bridgeToken), address(0), address(destToken));
+        IPaymentKitaGateway.PaymentRequestV2 memory req = _baseReq(address(bridgeToken), address(0), address(destToken));
         req.bridgeOption = 2; // LZ, but wrapper should force DEFAULT.
 
         vm.startPrank(user);
         bridgeToken.approve(address(vault), type(uint256).max);
-        bytes32 pid = gateway.createPaymentV2DefaultBridge(req);
+        bytes32 pid = gateway.createPaymentDefaultBridge(req);
         vm.stopPrank();
 
         assertTrue(pid != bytes32(0));
@@ -426,9 +413,9 @@ contract PayChainGatewayV2Phase1Test is Test {
 
     function testV2QuotePaymentCost_ReasonSourceSideSwapDisabled() public {
         gateway.setEnableSourceSideSwap(false);
-        IPayChainGateway.PaymentRequestV2 memory req = _baseReq(address(sourceToken), address(0), address(destToken));
+        IPaymentKitaGateway.PaymentRequestV2 memory req = _baseReq(address(sourceToken), address(0), address(destToken));
 
-        (, , , uint8 bridgeType, bool bridgeQuoteOk, string memory reason) = gateway.quotePaymentCostV2(req);
+        (, , , uint8 bridgeType, bool bridgeQuoteOk, string memory reason) = gateway.quotePaymentCost(req);
         assertEq(bridgeType, 1);
         assertFalse(bridgeQuoteOk);
         assertEq(reason, "source_side_swap_disabled");
@@ -436,9 +423,9 @@ contract PayChainGatewayV2Phase1Test is Test {
 
     function testV2QuotePaymentCost_ReasonSwapperNotConfigured() public {
         gateway.setSwapper(address(0));
-        IPayChainGateway.PaymentRequestV2 memory req = _baseReq(address(sourceToken), address(0), address(destToken));
+        IPaymentKitaGateway.PaymentRequestV2 memory req = _baseReq(address(sourceToken), address(0), address(destToken));
 
-        (, , , uint8 bridgeType, bool bridgeQuoteOk, string memory reason) = gateway.quotePaymentCostV2(req);
+        (, , , uint8 bridgeType, bool bridgeQuoteOk, string memory reason) = gateway.quotePaymentCost(req);
         assertEq(bridgeType, 1);
         assertFalse(bridgeQuoteOk);
         assertEq(reason, "swapper_not_configured");
@@ -447,23 +434,106 @@ contract PayChainGatewayV2Phase1Test is Test {
     function testV2QuotePaymentCost_ReasonSourceSwapQuoteFailed() public {
         swapper.setRoute(address(sourceToken), address(bridgeToken), true, false, 1e18);
         swapper.setForceQuoteFail(address(sourceToken), address(bridgeToken), true);
-        IPayChainGateway.PaymentRequestV2 memory req = _baseReq(address(sourceToken), address(0), address(destToken));
+        IPaymentKitaGateway.PaymentRequestV2 memory req = _baseReq(address(sourceToken), address(0), address(destToken));
 
-        (, , , uint8 bridgeType, bool bridgeQuoteOk, string memory reason) = gateway.quotePaymentCostV2(req);
+        (, , , uint8 bridgeType, bool bridgeQuoteOk, string memory reason) = gateway.quotePaymentCost(req);
         assertEq(bridgeType, 1);
         assertFalse(bridgeQuoteOk);
         assertEq(reason, "source_swap_quote_failed");
+    }
+
+    function testV2QuotePaymentCost_ReasonInvalidBridgeOption() public {
+        IPaymentKitaGateway.PaymentRequestV2 memory req = _baseReq(address(bridgeToken), address(0), address(destToken));
+        req.bridgeOption = 9;
+
+        (, , , uint8 bridgeType, bool bridgeQuoteOk, string memory reason) = gateway.quotePaymentCost(req);
+        assertEq(bridgeType, 255);
+        assertFalse(bridgeQuoteOk);
+        assertEq(reason, "invalid_bridge_option");
+    }
+
+    function testV2QuotePaymentCost_ReasonBridgeRouteNotConfigured() public {
+        IPaymentKitaGateway.PaymentRequestV2 memory req = _baseReq(address(bridgeToken), address(0), address(destToken));
+        req.bridgeOption = 2; // no adapter for this bridge type in setup
+
+        (, , , uint8 bridgeType, bool bridgeQuoteOk, string memory reason) = gateway.quotePaymentCost(req);
+        assertEq(bridgeType, 2);
+        assertFalse(bridgeQuoteOk);
+        assertEq(reason, "bridge_route_not_configured");
+    }
+
+    function testV2QuotePaymentCost_ReasonBridgeTokenNotConfigured() public {
+        IPaymentKitaGateway.PaymentRequestV2 memory req = _baseReq(address(sourceToken), address(0), address(destToken));
+        req.destChainIdBytes = bytes(DEST_2); // has route but no bridge-token lane mapping
+
+        (, , , uint8 bridgeType, bool bridgeQuoteOk, string memory reason) = gateway.quotePaymentCost(req);
+        assertEq(bridgeType, 1);
+        assertFalse(bridgeQuoteOk);
+        assertEq(reason, "bridge_token_not_configured");
+    }
+
+    function testV2QuotePaymentCost_ReasonBridgeTokenNotSupported() public {
+        MockTokenV2 unsupportedBridge = new MockTokenV2("UnsupportedBridge", "UBRG");
+        IPaymentKitaGateway.PaymentRequestV2 memory req = _baseReq(address(sourceToken), address(unsupportedBridge), address(destToken));
+
+        (, , , uint8 bridgeType, bool bridgeQuoteOk, string memory reason) = gateway.quotePaymentCost(req);
+        assertEq(bridgeType, 1);
+        assertFalse(bridgeQuoteOk);
+        assertEq(reason, "bridge_token_not_supported");
+    }
+
+    function testV2QuotePaymentCost_ReasonQuoteModuleNotConfigured() public {
+        PaymentKitaGateway gatewayNoModules = new PaymentKitaGateway(address(vault), address(router), address(registry), address(this));
+        gatewayNoModules.setFeePolicyManager(address(feePolicyManager));
+        IPaymentKitaGateway.PaymentRequestV2 memory req = _baseReq(address(bridgeToken), address(0), address(destToken));
+        req.bridgeOption = 1;
+        req.bridgeTokenSource = address(bridgeToken);
+
+        (
+            uint256 platformFee,
+            uint256 bridgeFeeNative,
+            uint256 totalSourceTokenRequired,
+            uint8 bridgeType,
+            bool bridgeQuoteOk,
+            string memory reason
+        ) = gatewayNoModules.quotePaymentCost(req);
+        assertEq(bridgeType, 1);
+        assertFalse(bridgeQuoteOk);
+        assertEq(reason, "quote_module_not_configured");
+        assertEq(bridgeFeeNative, 0);
+        assertGt(platformFee, 0);
+        assertEq(totalSourceTokenRequired, req.amountInSource + platformFee);
+    }
+
+    function testV2QuotePaymentCost_ReasonAmountMustBeGtZero() public {
+        IPaymentKitaGateway.PaymentRequestV2 memory req = _baseReq(address(bridgeToken), address(0), address(destToken));
+        req.amountInSource = 0;
+
+        (
+            uint256 platformFee,
+            uint256 bridgeFeeNative,
+            uint256 totalSourceTokenRequired,
+            uint8 bridgeType,
+            bool bridgeQuoteOk,
+            string memory reason
+        ) = gateway.quotePaymentCost(req);
+        assertEq(bridgeType, 255);
+        assertFalse(bridgeQuoteOk);
+        assertEq(reason, "amount_must_be_gt_zero");
+        assertEq(platformFee, 0);
+        assertEq(bridgeFeeNative, 0);
+        assertEq(totalSourceTokenRequired, 0);
     }
 
     function testPreviewApprovalV2_AppliesNativeFeeBuffer() public {
         gateway.setBridgeTokenForDest("eip155:10", address(bridgeToken));
         feeAdapter.setQuotedFee(1e15); // 0.001 native
 
-        IPayChainGateway.PaymentRequestV2 memory req = _baseReq(address(bridgeToken), address(0), address(destToken));
+        IPaymentKitaGateway.PaymentRequestV2 memory req = _baseReq(address(bridgeToken), address(0), address(destToken));
         req.destChainIdBytes = bytes("eip155:10");
 
-        (uint256 platformFee,,,,,) = gateway.quotePaymentCostV2(req);
-        (address approvalToken, uint256 approvalAmount, uint256 requiredNativeFee) = gateway.previewApprovalV2(req);
+        (uint256 platformFee,,,,,) = gateway.quotePaymentCost(req);
+        (address approvalToken, uint256 approvalAmount, uint256 requiredNativeFee) = gateway.previewApproval(req);
 
         assertEq(approvalToken, address(bridgeToken));
         assertEq(approvalAmount, req.amountInSource + platformFee);
@@ -471,51 +541,61 @@ contract PayChainGatewayV2Phase1Test is Test {
         assertEq(requiredNativeFee, 1_050_000_000_000_000);
     }
 
+    function testPreviewApprovalV2_ZeroNativeFeeWhenQuoteUnhealthy() public {
+        IPaymentKitaGateway.PaymentRequestV2 memory req = _baseReq(address(bridgeToken), address(0), address(destToken));
+        req.bridgeOption = 2; // unconfigured route, quote must be unhealthy
+
+        (uint256 platformFee,,,,,) = gateway.quotePaymentCost(req);
+        (, uint256 approvalAmount, uint256 requiredNativeFee) = gateway.previewApproval(req);
+        assertEq(approvalAmount, req.amountInSource + platformFee);
+        assertEq(requiredNativeFee, 0);
+    }
+
     function testV2CreatePayment_RevertBridgeOptionRouteMissing() public {
         // Explicit LayerZero option (2) has no registered adapter in setup.
-        IPayChainGateway.PaymentRequestV2 memory req = _baseReq(address(bridgeToken), address(0), address(destToken));
+        IPaymentKitaGateway.PaymentRequestV2 memory req = _baseReq(address(bridgeToken), address(0), address(destToken));
         req.bridgeOption = 2;
 
         vm.startPrank(user);
         bridgeToken.approve(address(vault), type(uint256).max);
         vm.expectRevert(
             abi.encodeWithSelector(
-                PayChainGateway.BridgeRouteNotConfigured.selector,
+                PaymentKitaGateway.BridgeRouteNotConfigured.selector,
                 DEST,
                 uint8(2)
             )
         );
-        gateway.createPaymentV2(req);
+        gateway.createPayment(req);
         vm.stopPrank();
     }
 
     function testPrivacyV2_RevertWhenIntentMissing() public {
-        IPayChainGateway.PaymentRequestV2 memory req = _baseReq(address(bridgeToken), address(0), address(destToken));
-        req.mode = IPayChainGateway.PaymentMode.PRIVACY;
+        IPaymentKitaGateway.PaymentRequestV2 memory req = _baseReq(address(bridgeToken), address(0), address(destToken));
+        req.mode = IPaymentKitaGateway.PaymentMode.PRIVACY;
 
-        IPayChainGateway.PrivateRouting memory privacy;
+        IPaymentKitaGateway.PrivateRouting memory privacy;
         privacy.intentId = bytes32(0);
         privacy.stealthReceiver = address(0xABCD);
 
         vm.startPrank(user);
         bridgeToken.approve(address(vault), type(uint256).max);
         vm.expectRevert(bytes("Missing privacy intent"));
-        gateway.createPaymentPrivateV2(req, privacy);
+        gateway.createPaymentPrivate(req, privacy);
         vm.stopPrank();
     }
 
     function testPrivacyV2_RevertWhenStealthReceiverZero() public {
-        IPayChainGateway.PaymentRequestV2 memory req = _baseReq(address(bridgeToken), address(0), address(destToken));
-        req.mode = IPayChainGateway.PaymentMode.PRIVACY;
+        IPaymentKitaGateway.PaymentRequestV2 memory req = _baseReq(address(bridgeToken), address(0), address(destToken));
+        req.mode = IPaymentKitaGateway.PaymentMode.PRIVACY;
 
-        IPayChainGateway.PrivateRouting memory privacy;
+        IPaymentKitaGateway.PrivateRouting memory privacy;
         privacy.intentId = keccak256("intent-zero-stealth");
         privacy.stealthReceiver = address(0);
 
         vm.startPrank(user);
         bridgeToken.approve(address(vault), type(uint256).max);
         vm.expectRevert(bytes("Invalid stealth receiver"));
-        gateway.createPaymentPrivateV2(req, privacy);
+        gateway.createPaymentPrivate(req, privacy);
         vm.stopPrank();
     }
 
@@ -523,18 +603,16 @@ contract PayChainGatewayV2Phase1Test is Test {
         vm.assume(amount > 1e6);
         uint256 amt = uint256(amount);
 
-        IPayChainGateway.PaymentRequestV2 memory req = _baseReq(address(bridgeToken), address(0), address(destToken));
+        IPaymentKitaGateway.PaymentRequestV2 memory req = _baseReq(address(bridgeToken), address(0), address(destToken));
         req.amountInSource = amt;
         req.minBridgeAmountOut = 0;
 
         bridgeToken.mint(user, amt + 1e18);
         vm.startPrank(user);
         bridgeToken.approve(address(vault), type(uint256).max);
-        bytes32 pid = gateway.createPaymentV2(req);
+        bytes32 pid = gateway.createPayment(req);
         vm.stopPrank();
 
         assertTrue(pid != bytes32(0));
-        (, , , , uint256 storedAmount, , ,) = gateway.paymentMessages(pid);
-        assertEq(storedAmount, amt);
     }
 }

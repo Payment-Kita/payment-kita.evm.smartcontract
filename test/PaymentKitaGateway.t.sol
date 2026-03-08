@@ -2,15 +2,21 @@
 pragma solidity ^0.8.20;
 
 import "forge-std/Test.sol";
-import "../src/PayChainGateway.sol";
-import "../src/interfaces/IPayChainGateway.sol";
-import "../src/PayChainRouter.sol";
-import "../src/vaults/PayChainVault.sol";
+import "../src/PaymentKitaGateway.sol";
+import "../src/interfaces/IPaymentKitaGateway.sol";
+import "../src/PaymentKitaRouter.sol";
+import "../src/vaults/PaymentKitaVault.sol";
 import "../src/interfaces/IBridgeAdapter.sol";
 import "../src/integrations/ccip/CCIPSender.sol";
 import "../src/integrations/ccip/CCIPReceiver.sol";
 import "../src/integrations/ccip/Client.sol";
 import "../src/TokenRegistry.sol";
+import "../src/gateway/modules/GatewayValidatorModule.sol";
+import "../src/gateway/modules/GatewayQuoteModule.sol";
+import "../src/gateway/modules/GatewayExecutionModule.sol";
+import "../src/gateway/modules/GatewayPrivacyModule.sol";
+import "../src/gateway/fee/FeePolicyManager.sol";
+import "../src/gateway/fee/strategies/FeeStrategyDefaultV1.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
@@ -24,10 +30,10 @@ contract MockERC20 is ERC20 {
 contract MockVaultSwapper {
     using SafeERC20 for IERC20;
 
-    PayChainVault public immutable vault;
+    PaymentKitaVault public immutable vault;
 
     constructor(address _vault) {
-        vault = PayChainVault(_vault);
+        vault = PaymentKitaVault(_vault);
     }
 
     function swapFromVault(
@@ -96,16 +102,22 @@ contract MockNoopAdapter is IBridgeAdapter {
     }
 }
 
-contract PayChainGatewayTest is Test {
-    PayChainGateway gateway;
-    PayChainRouter router;
-    PayChainVault vault;
+contract PaymentKitaGatewayTest is Test {
+    PaymentKitaGateway gateway;
+    PaymentKitaRouter router;
+    PaymentKitaVault vault;
     CCIPSender ccipSender;
     CCIPReceiverAdapter ccipReceiver;
     TokenRegistry tokenRegistry;
     MockERC20 token;
     MockCCIPRouter ccipRouterMock;
     MockNoopAdapter noopAdapter;
+    GatewayValidatorModule validatorModule;
+    GatewayQuoteModule quoteModule;
+    GatewayExecutionModule executionModule;
+    GatewayPrivacyModule privacyModule;
+    FeePolicyManager feePolicyManager;
+    FeeStrategyDefaultV1 defaultStrategy;
 
     address user = address(1);
     address merchant = address(2);
@@ -137,13 +149,19 @@ contract PayChainGatewayTest is Test {
         
         // 2. Deploy Core
         tokenRegistry = new TokenRegistry();
-        vault = new PayChainVault();
-        router = new PayChainRouter();
-        gateway = new PayChainGateway(address(vault), address(router), address(tokenRegistry), address(this));
+        vault = new PaymentKitaVault();
+        router = new PaymentKitaRouter();
+        gateway = new PaymentKitaGateway(address(vault), address(router), address(tokenRegistry), address(this));
         
         // 3. Deploy Mocks
         ccipRouterMock = new MockCCIPRouter();
         noopAdapter = new MockNoopAdapter();
+        validatorModule = new GatewayValidatorModule();
+        quoteModule = new GatewayQuoteModule();
+        executionModule = new GatewayExecutionModule();
+        privacyModule = new GatewayPrivacyModule();
+        defaultStrategy = new FeeStrategyDefaultV1();
+        feePolicyManager = new FeePolicyManager(address(defaultStrategy));
         
         // 4. Deploy Adapters
         ccipSender = new CCIPSender(address(vault), address(ccipRouterMock));
@@ -158,6 +176,13 @@ contract PayChainGatewayTest is Test {
         // Router: Register Adapters (Wake: False positive reentrancy warning - Safe, no external calls)
         router.registerAdapter(DEST_CHAIN, 1, address(ccipSender)); // 1 = CCIP
         gateway.setDefaultBridgeType(DEST_CHAIN, 1);
+        gateway.setGatewayModules(
+            address(validatorModule),
+            address(quoteModule),
+            address(executionModule),
+            address(privacyModule)
+        );
+        gateway.setFeePolicyManager(address(feePolicyManager));
         
         // Gateway: Whitelist Token - Already handled by TokenRegistry
         // gateway.setTokenSupport(address(token), true);
@@ -176,6 +201,39 @@ contract PayChainGatewayTest is Test {
         require(token.transfer(user, 1000 * 10**18), "fund user failed");
         
         vm.stopPrank();
+    }
+
+    function _createPaymentLegacy(
+        bytes memory destChainIdBytes,
+        bytes memory receiverBytes,
+        address sourceToken,
+        address destToken,
+        uint256 amount
+    ) internal returns (bytes32) {
+        return _createPaymentLegacy(destChainIdBytes, receiverBytes, sourceToken, destToken, amount, 0);
+    }
+
+    function _createPaymentLegacy(
+        bytes memory destChainIdBytes,
+        bytes memory receiverBytes,
+        address sourceToken,
+        address destToken,
+        uint256 amount,
+        uint256 minDestAmountOut
+    ) internal returns (bytes32) {
+        IPaymentKitaGateway.PaymentRequestV2 memory req = IPaymentKitaGateway.PaymentRequestV2({
+            destChainIdBytes: destChainIdBytes,
+            receiverBytes: receiverBytes,
+            sourceToken: sourceToken,
+            bridgeTokenSource: address(0),
+            destToken: destToken,
+            amountInSource: amount,
+            minBridgeAmountOut: 0,
+            minDestAmountOut: minDestAmountOut,
+            mode: IPaymentKitaGateway.PaymentMode.REGULAR,
+            bridgeOption: 255
+        });
+        return gateway.createPayment(req);
     }
     
     function testCreatePayment() public {
@@ -208,7 +266,7 @@ contract PayChainGatewayTest is Test {
         // Note: Event params might differ based on impl details (bridgeType string vs int).
         // Let's check Gateway Logic.
         
-        bytes32 pid = gateway.createPayment(
+        bytes32 pid = _createPaymentLegacy(
             destChain,
             receiver,
             address(token),
@@ -406,7 +464,7 @@ contract PayChainGatewayTest is Test {
         bytes memory receiver = abi.encode(merchant);
         
         // Call with slippage param
-        bytes32 pid = gateway.createPaymentWithSlippage(
+        bytes32 pid = _createPaymentLegacy(
             destChain,
             receiver,
             address(token),
@@ -430,7 +488,7 @@ contract PayChainGatewayTest is Test {
         token.approve(address(vault), 101 * 10**18);
 
         string memory sameChain = string.concat("eip155:", vm.toString(block.chainid));
-        bytes32 pid = gateway.createPayment(
+        bytes32 pid = _createPaymentLegacy(
             bytes(sameChain),
             abi.encode(merchant),
             address(token),
@@ -442,8 +500,9 @@ contract PayChainGatewayTest is Test {
         assertEq(token.balanceOf(merchant), 100 * 10**18);
         assertEq(token.balanceOf(address(vault)), 0);
 
-        (,,,,,,,, IPayChainGateway.PaymentStatus status,) = gateway.payments(pid);
-        assertEq(uint256(status), uint256(IPayChainGateway.PaymentStatus.Completed));
+        IPaymentKitaGateway.Payment memory p = gateway.getPayment(pid);
+        IPaymentKitaGateway.PaymentStatus status = p.status;
+        assertEq(uint256(status), uint256(IPaymentKitaGateway.PaymentStatus.Completed));
 
         vm.stopPrank();
     }
@@ -494,12 +553,12 @@ contract PayChainGatewayTest is Test {
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                PayChainGateway.BridgeRouteNotConfigured.selector,
+                PaymentKitaGateway.BridgeRouteNotConfigured.selector,
                 "eip155:42161",
                 uint8(0)
             )
         );
-        gateway.createPayment(
+        _createPaymentLegacy(
             bytes("eip155:42161"),
             abi.encode(merchant),
             address(token),
@@ -514,7 +573,7 @@ contract PayChainGatewayTest is Test {
         token.approve(address(vault), 101 * 10**18);
 
         vm.expectRevert(bytes("Empty dest chain ID"));
-        gateway.createPayment(
+        _createPaymentLegacy(
             bytes(""),
             abi.encode(merchant),
             address(token),
@@ -529,7 +588,7 @@ contract PayChainGatewayTest is Test {
         token.approve(address(vault), 101 * 10**18);
 
         vm.expectRevert(bytes("Empty receiver"));
-        gateway.createPayment(
+        _createPaymentLegacy(
             bytes(DEST_CHAIN),
             bytes(""),
             address(token),
@@ -545,7 +604,7 @@ contract PayChainGatewayTest is Test {
         unsupported.approve(address(vault), 101 * 10**18);
 
         vm.expectRevert(bytes("Source token not supported"));
-        gateway.createPayment(
+        _createPaymentLegacy(
             bytes(DEST_CHAIN),
             abi.encode(merchant),
             address(unsupported),
@@ -561,7 +620,7 @@ contract PayChainGatewayTest is Test {
 
         // abi.decode(bytes,address) should revert for malformed payload length
         vm.expectRevert();
-        gateway.createPayment(
+        _createPaymentLegacy(
             bytes(DEST_CHAIN),
             hex"01",
             address(token),
@@ -584,7 +643,7 @@ contract PayChainGatewayTest is Test {
         string memory sameChain = string.concat("eip155:", vm.toString(block.chainid));
 
         vm.expectRevert(bytes("Swapper not configured"));
-        gateway.createPayment(
+        _createPaymentLegacy(
             bytes(sameChain),
             abi.encode(merchant),
             address(token),
@@ -615,7 +674,7 @@ contract PayChainGatewayTest is Test {
         token.approve(address(vault), 101 * 10**18);
         string memory sameChain = string.concat("eip155:", vm.toString(block.chainid));
 
-        bytes32 pid = gateway.createPaymentWithSlippage(
+        bytes32 pid = _createPaymentLegacy(
             bytes(sameChain),
             abi.encode(merchant),
             address(token),
@@ -626,8 +685,9 @@ contract PayChainGatewayTest is Test {
 
         assertTrue(pid != bytes32(0));
         assertEq(tokenB.balanceOf(merchant), 100 * 10**18);
-        (,,,,,,,, IPayChainGateway.PaymentStatus status,) = gateway.payments(pid);
-        assertEq(uint256(status), uint256(IPayChainGateway.PaymentStatus.Completed));
+        IPaymentKitaGateway.Payment memory p = gateway.getPayment(pid);
+        IPaymentKitaGateway.PaymentStatus status = p.status;
+        assertEq(uint256(status), uint256(IPaymentKitaGateway.PaymentStatus.Completed));
         vm.stopPrank();
     }
 
@@ -652,7 +712,7 @@ contract PayChainGatewayTest is Test {
         vm.startPrank(user);
         token.approve(address(vault), 101 * 10**18);
 
-        bytes32 pid = gateway.createPaymentWithSlippage(
+        bytes32 pid = _createPaymentLegacy(
             bytes(DEST_CHAIN),
             abi.encode(merchant),
             address(token),
@@ -672,7 +732,7 @@ contract PayChainGatewayTest is Test {
         vm.startPrank(user);
         token.approve(address(vault), 101 * 10**18);
 
-        bytes32 pid = gateway.createPayment(
+        bytes32 pid = _createPaymentLegacy(
             bytes(DEST_CHAIN),
             abi.encode(merchant),
             address(token),
@@ -702,7 +762,7 @@ contract PayChainGatewayTest is Test {
         vm.startPrank(user);
         token.approve(address(vault), 101 * 10**18);
 
-        bytes32 pid = gateway.createPayment(
+        bytes32 pid = _createPaymentLegacy(
             bytes(DEST_CHAIN),
             abi.encode(merchant),
             address(token),
@@ -726,7 +786,7 @@ contract PayChainGatewayTest is Test {
     function testRetryMessageRevertUnauthorized() public {
         vm.startPrank(user);
         token.approve(address(vault), 101 * 10**18);
-        bytes32 pid = gateway.createPayment(
+        bytes32 pid = _createPaymentLegacy(
             bytes(DEST_CHAIN),
             abi.encode(merchant),
             address(token),
@@ -754,7 +814,7 @@ contract PayChainGatewayTest is Test {
         token.approve(address(vault), 101 * 10**18);
 
         string memory sameChain = string.concat("eip155:", vm.toString(block.chainid));
-        bytes32 pid = gateway.createPayment(
+        bytes32 pid = _createPaymentLegacy(
             bytes(sameChain),
             abi.encode(merchant),
             address(token),
@@ -770,7 +830,7 @@ contract PayChainGatewayTest is Test {
     function testRetryMessageRevertAfterMaxAttempts() public {
         vm.startPrank(user);
         token.approve(address(vault), 101 * 10**18);
-        bytes32 pid = gateway.createPayment(
+        bytes32 pid = _createPaymentLegacy(
             bytes(DEST_CHAIN),
             abi.encode(merchant),
             address(token),
@@ -797,24 +857,26 @@ contract PayChainGatewayTest is Test {
 
     function testQuotePaymentCostSameChainReturnsNoBridgeFee() public {
         string memory sameChain = string.concat("eip155:", vm.toString(block.chainid));
+        IPaymentKitaGateway.PaymentRequestV2 memory req;
+        req.destChainIdBytes = bytes(sameChain);
+        req.receiverBytes = abi.encode(merchant);
+        req.sourceToken = address(token);
+        req.bridgeTokenSource = address(token);
+        req.destToken = address(token);
+        req.amountInSource = 100 * 10**18;
+        req.minBridgeAmountOut = 0;
+        req.minDestAmountOut = 0;
+        req.mode = IPaymentKitaGateway.PaymentMode.REGULAR;
+        req.bridgeOption = 255;
         (
             uint256 platformFee,
             uint256 bridgeFeeNative,
             uint256 totalSourceTokenRequired,
             uint8 bridgeType,
-            bool isSameChain,
             bool bridgeQuoteOk,
             string memory bridgeQuoteReason
-        ) = gateway.quotePaymentCost(
-            bytes(sameChain),
-            abi.encode(merchant),
-            address(token),
-            address(token),
-            100 * 10**18,
-            0
-        );
+        ) = gateway.quotePaymentCost(req);
 
-        assertTrue(isSameChain);
         assertEq(bridgeType, 255);
         assertTrue(bridgeQuoteOk);
         assertEq(bytes(bridgeQuoteReason).length, 0);
@@ -824,26 +886,28 @@ contract PayChainGatewayTest is Test {
 
     function testQuotePaymentCostTokenBridgeModeRejectsCrossToken() public {
         vm.prank(router.owner());
-        router.setBridgeMode(1, PayChainRouter.BridgeMode.TOKEN_BRIDGE);
+        router.setBridgeMode(1, PaymentKitaRouter.BridgeMode.TOKEN_BRIDGE);
+        IPaymentKitaGateway.PaymentRequestV2 memory req;
+        req.destChainIdBytes = bytes(DEST_CHAIN);
+        req.receiverBytes = abi.encode(merchant);
+        req.sourceToken = address(token);
+        req.bridgeTokenSource = address(token);
+        req.destToken = address(0x1234);
+        req.amountInSource = 100 * 10**18;
+        req.minBridgeAmountOut = 0;
+        req.minDestAmountOut = 0;
+        req.mode = IPaymentKitaGateway.PaymentMode.REGULAR;
+        req.bridgeOption = 255;
 
         (
             uint256 platformFee,
             uint256 bridgeFeeNative,
             uint256 totalSourceTokenRequired,
             uint8 bridgeType,
-            bool isSameChain,
             bool bridgeQuoteOk,
             string memory bridgeQuoteReason
-        ) = gateway.quotePaymentCost(
-            bytes(DEST_CHAIN),
-            abi.encode(merchant),
-            address(token),
-            address(0x1234),
-            100 * 10**18,
-            0
-        );
+        ) = gateway.quotePaymentCost(req);
 
-        assertFalse(isSameChain);
         assertEq(bridgeType, 1);
         assertFalse(bridgeQuoteOk);
         assertEq(bridgeQuoteReason, "TOKEN_BRIDGE requires same token");
@@ -853,22 +917,25 @@ contract PayChainGatewayTest is Test {
 
     function testTrackBPerBytePolicyChangesQuotedPlatformFee() public {
         uint256 amount = 100 * 10**18;
+        IPaymentKitaGateway.PaymentRequestV2 memory req;
+        req.destChainIdBytes = bytes(DEST_CHAIN);
+        req.receiverBytes = abi.encode(merchant);
+        req.sourceToken = address(token);
+        req.bridgeTokenSource = address(token);
+        req.destToken = address(token);
+        req.amountInSource = amount;
+        req.minBridgeAmountOut = 0;
+        req.minDestAmountOut = 0;
+        req.mode = IPaymentKitaGateway.PaymentMode.REGULAR;
+        req.bridgeOption = 255;
         (
             uint256 legacyPlatformFee,
             uint256 legacyBridgeFeeNative,
             uint256 legacyTotalSourceTokenRequired,
             uint8 legacyBridgeType,
-            bool legacyIsSameChain,
             bool legacyBridgeQuoteOk,
             string memory legacyBridgeQuoteReason
-        ) = gateway.quotePaymentCost(
-            bytes(DEST_CHAIN),
-            abi.encode(merchant),
-            address(token),
-            address(token),
-            amount,
-            0
-        );
+        ) = gateway.quotePaymentCost(req);
 
         // payloadLength = 6 + 32 + 20 + 20 + 32 + 32 = 142
         // fee = (142 + 100) * 1_000_000 = 242_000_000
@@ -880,17 +947,9 @@ contract PayChainGatewayTest is Test {
             uint256 perByteBridgeFeeNative,
             uint256 perByteTotalSourceTokenRequired,
             uint8 perByteBridgeType,
-            bool perByteIsSameChain,
             bool perByteBridgeQuoteOk,
             string memory perByteBridgeQuoteReason
-        ) = gateway.quotePaymentCost(
-            bytes(DEST_CHAIN),
-            abi.encode(merchant),
-            address(token),
-            address(token),
-            amount,
-            0
-        );
+        ) = gateway.quotePaymentCost(req);
 
         assertEq(perBytePlatformFee, 242_000_000);
         assertTrue(perBytePlatformFee > legacyPlatformFee);
@@ -901,8 +960,6 @@ contract PayChainGatewayTest is Test {
         assertTrue(perByteTotalSourceTokenRequired > amount);
         assertEq(legacyBridgeType, 1);
         assertEq(perByteBridgeType, 1);
-        assertFalse(legacyIsSameChain);
-        assertFalse(perByteIsSameChain);
         assertTrue(legacyBridgeQuoteOk);
         assertTrue(perByteBridgeQuoteOk);
         assertEq(bytes(legacyBridgeQuoteReason).length, 0);
@@ -916,7 +973,7 @@ contract PayChainGatewayTest is Test {
         vm.startPrank(user);
         token.approve(address(vault), 100 * 10**18 + 242_000_000);
 
-        bytes32 pid = gateway.createPayment(
+        bytes32 pid = _createPaymentLegacy(
             bytes(DEST_CHAIN),
             abi.encode(merchant),
             address(token),
@@ -925,17 +982,8 @@ contract PayChainGatewayTest is Test {
         );
         vm.stopPrank();
 
-        (
-            uint256 platformFeeToken,
-            uint256 bridgeFeeNative,
-            uint256 bridgeFeeTokenEq,
-            uint256 totalSourceTokenRequired
-        ) = gateway.paymentCostSnapshots(pid);
-
-        assertEq(platformFeeToken, 242_000_000);
-        assertEq(bridgeFeeNative, 0);
-        assertEq(bridgeFeeTokenEq, 0);
-        assertEq(totalSourceTokenRequired, 100 * 10**18 + 242_000_000);
+        assertTrue(pid != bytes32(0));
+        assertEq(token.balanceOf(address(this)), 242_000_000);
     }
 
     function testAdapterFailAndRefundAuthorizedAdapter() public {
@@ -954,7 +1002,7 @@ contract PayChainGatewayTest is Test {
 
         vm.startPrank(user);
         token.approve(address(vault), 101 * 10**18);
-        bytes32 pid = gateway.createPayment(
+        bytes32 pid = _createPaymentLegacy(
             bytes(noopDest),
             abi.encode(merchant),
             address(token),
@@ -963,14 +1011,14 @@ contract PayChainGatewayTest is Test {
         );
         vm.stopPrank();
 
-        IPayChainGateway.Payment memory payment = gateway.getPayment(pid);
-        assertEq(uint256(payment.status), uint256(IPayChainGateway.PaymentStatus.Processing));
+        IPaymentKitaGateway.Payment memory payment = gateway.getPayment(pid);
+        assertEq(uint256(payment.status), uint256(IPaymentKitaGateway.PaymentStatus.Processing));
 
         vm.prank(address(noopAdapter));
         gateway.adapterFailAndRefund(pid, "HYPERBRIDGE_TIMEOUT");
 
-        IPayChainGateway.Payment memory afterPayment = gateway.getPayment(pid);
-        assertEq(uint256(afterPayment.status), uint256(IPayChainGateway.PaymentStatus.Refunded));
+        IPaymentKitaGateway.Payment memory afterPayment = gateway.getPayment(pid);
+        assertEq(uint256(afterPayment.status), uint256(IPaymentKitaGateway.PaymentStatus.Refunded));
 
         // Platform fee is non-refundable; amount is refunded.
         assertEq(token.balanceOf(user), userBalanceBefore - payment.fee);

@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "forge-std/Script.sol";
-import "../src/vaults/PayChainVault.sol";
+import "../src/vaults/PaymentKitaVault.sol";
 
 contract AuthorizeSender is Script {
     function run() external {
@@ -13,7 +13,7 @@ contract AuthorizeSender is Script {
 
         vm.startBroadcast(deployerPrivateKey);
 
-        PayChainVault vault = PayChainVault(vaultAddress);
+        PaymentKitaVault vault = PaymentKitaVault(vaultAddress);
         vault.setAuthorizedSpender(senderAddress, true);
 
         vm.stopBroadcast();

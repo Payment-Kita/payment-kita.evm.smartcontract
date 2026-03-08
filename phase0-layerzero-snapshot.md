@@ -17,7 +17,7 @@ Impact:
 ## Baseline Addresses (from chain docs)
 
 ## Base
-Source: `pay-chain.evm.smartcontract/CHAIN_BASE.md`
+Source: `payment-kita.evm.smartcontract/CHAIN_BASE.md`
 - Router: `0x1d7550079DAe36f55F4999E0B24AC037D092249C`
 - Gateway: `0xC696dCAC9369fD26AB37d116C54cC2f19B156e4D`
 - Vault: `0xe3Be18b812b0645674cCa81f24dC5f7bD62911b7`
@@ -25,7 +25,7 @@ Source: `pay-chain.evm.smartcontract/CHAIN_BASE.md`
 - LayerZeroReceiverAdapter: `0x4864138d5Dc8a5bcFd4228D7F784D1F32859986f`
 
 ## Polygon
-Source: `pay-chain.evm.smartcontract/CHAIN_POLYGON.md`
+Source: `payment-kita.evm.smartcontract/CHAIN_POLYGON.md`
 - Router: `0xb4a911eC34eDaaEFC393c52bbD926790B9219df4`
 - Gateway: `0x7a4f3b606D90e72555A36cB370531638fad19Bf8`
 - Vault: `0x6CFc15C526B8d06e7D192C18B5A2C5e3E10F7D8c`
@@ -33,7 +33,7 @@ Source: `pay-chain.evm.smartcontract/CHAIN_POLYGON.md`
 - LayerZeroReceiverAdapter: `0x67AAc121bc447F112389921A8B94c3D6FCBd98f9`
 
 ## Arbitrum
-Source: `pay-chain.evm.smartcontract/CHAIN_ARBITRUM.md`
+Source: `payment-kita.evm.smartcontract/CHAIN_ARBITRUM.md`
 - Router: `0x5CF8c2EC1e96e6a5b17146b2BeF67d1012deEF7e`
 - Gateway: `0x5a1179675aaE10D8E4B74d5Ff87152016f28F0D8`
 - Vault: `0x12306CA381813595BeE3c64b19318419C9E12f02`

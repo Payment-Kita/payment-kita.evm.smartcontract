@@ -36,7 +36,7 @@ interface ILayerZeroEndpointV2 {
 
 /**
  * @title LayerZeroSenderAdapter
- * @notice LayerZero v2 sender adapter for PayChain routing
+ * @notice LayerZero v2 sender adapter for PaymentKita routing
  * @dev Minimal endpoint integration without external OApp dependency.
  */
 contract LayerZeroSenderAdapter is IBridgeAdapter, Ownable {

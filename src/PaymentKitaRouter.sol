@@ -6,11 +6,11 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "./interfaces/IBridgeAdapter.sol";
 
 /**
- * @title PayChainRouter
+ * @title PaymentKitaRouter
  * @notice Manages bridge adapters and routes cross-chain payments
  * @dev Registry for bridge adapters per chain and type
  */
-contract PayChainRouter is Ownable, ReentrancyGuard {
+contract PaymentKitaRouter is Ownable, ReentrancyGuard {
     // ============ State Variables ============
 
     /// @notice Mapping from destChainId (string) => bridgeType (uint8) => Adapter Address
@@ -144,7 +144,7 @@ contract PayChainRouter is Ownable, ReentrancyGuard {
 
     /**
      * @notice Route a payment to the appropriate bridge adapter
-     * @dev Called by PayChainGateway. Funds should already be in the Vault/approved.
+     * @dev Called by PaymentKitaGateway. Funds should already be in the Vault/approved.
      * @param destChainId Destination chain string
      * @param bridgeType Bridge type
      * @param message Standardized bridge message

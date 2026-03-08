@@ -3,8 +3,8 @@ pragma solidity ^0.8.20;
 
 import "forge-std/Script.sol";
 import "../src/TokenSwapper.sol";
-import "../src/PayChainGateway.sol";
-import "../src/vaults/PayChainVault.sol";
+import "../src/PaymentKitaGateway.sol";
+import "../src/vaults/PaymentKitaVault.sol";
 
 contract DeployTokenSwapperV2 is Script {
     address constant UNIVERSAL_ROUTER = 0x6fF5693b99212Da76ad316178A184AB56D299b43;
@@ -43,11 +43,11 @@ contract DeployTokenSwapperV2 is Script {
         
         // 3. Authorize Swapper on Vault
         console.log("Authorizing Swapper on Vault...");
-        PayChainVault(VAULT).setAuthorizedSpender(address(swapper), true);
+        PaymentKitaVault(VAULT).setAuthorizedSpender(address(swapper), true);
         
         // 4. Update Gateway to use new Swapper
         console.log("Updating Gateway...");
-        PayChainGateway(GATEWAY).setSwapper(address(swapper));
+        PaymentKitaGateway(GATEWAY).setSwapper(address(swapper));
 
         // 5. Configure Direct V3 Pools
         console.log("Configuring Direct V3 Pools...");

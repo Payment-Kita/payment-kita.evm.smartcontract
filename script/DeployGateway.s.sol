@@ -5,7 +5,7 @@ import "./DeployCommon.s.sol";
 
 /**
  * @title DeployGateway
- * @notice Deployment script for Modular PayChain Architecture
+ * @notice Deployment script for Modular PaymentKita Architecture
  */
 contract DeployGateway is DeployCommon {
     function run() public {

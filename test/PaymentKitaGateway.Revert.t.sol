@@ -2,11 +2,18 @@
 pragma solidity ^0.8.20;
 
 import "forge-std/Test.sol";
-import "../src/PayChainGateway.sol";
-import "../src/PayChainRouter.sol";
-import "../src/vaults/PayChainVault.sol";
+import "../src/PaymentKitaGateway.sol";
+import "../src/PaymentKitaRouter.sol";
+import "../src/vaults/PaymentKitaVault.sol";
 import "../src/TokenRegistry.sol";
+import "../src/interfaces/IPaymentKitaGateway.sol";
 import "../src/interfaces/IBridgeAdapter.sol";
+import "../src/gateway/modules/GatewayValidatorModule.sol";
+import "../src/gateway/modules/GatewayQuoteModule.sol";
+import "../src/gateway/modules/GatewayExecutionModule.sol";
+import "../src/gateway/modules/GatewayPrivacyModule.sol";
+import "../src/gateway/fee/FeePolicyManager.sol";
+import "../src/gateway/fee/strategies/FeeStrategyDefaultV1.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 // ──────────────────────────────────────────────────────
@@ -86,12 +93,18 @@ contract SuccessAdapter is IBridgeAdapter {
 // ──────────────────────────────────────────────────────
 // Tests
 // ──────────────────────────────────────────────────────
-contract PayChainGatewayRevertTest is Test {
-    PayChainGateway gateway;
-    PayChainRouter router;
-    PayChainVault vault;
+contract PaymentKitaGatewayRevertTest is Test {
+    PaymentKitaGateway gateway;
+    PaymentKitaRouter router;
+    PaymentKitaVault vault;
     TokenRegistry tokenRegistry;
     MockToken token;
+    GatewayValidatorModule validatorModule;
+    GatewayQuoteModule quoteModule;
+    GatewayExecutionModule executionModule;
+    GatewayPrivacyModule privacyModule;
+    FeePolicyManager feePolicyManager;
+    FeeStrategyDefaultV1 defaultStrategy;
 
     address user = address(0xBEEF);
     address merchant = address(0xCAFE);
@@ -104,12 +117,25 @@ contract PayChainGatewayRevertTest is Test {
         // Deploy core
         token = new MockToken();
         tokenRegistry = new TokenRegistry();
-        vault = new PayChainVault();
-        router = new PayChainRouter();
-        gateway = new PayChainGateway(address(vault), address(router), address(tokenRegistry), address(this));
+        vault = new PaymentKitaVault();
+        router = new PaymentKitaRouter();
+        gateway = new PaymentKitaGateway(address(vault), address(router), address(tokenRegistry), address(this));
+        validatorModule = new GatewayValidatorModule();
+        quoteModule = new GatewayQuoteModule();
+        executionModule = new GatewayExecutionModule();
+        privacyModule = new GatewayPrivacyModule();
+        defaultStrategy = new FeeStrategyDefaultV1();
+        feePolicyManager = new FeePolicyManager(address(defaultStrategy));
 
         // Token support
         tokenRegistry.setTokenSupport(address(token), true);
+        gateway.setGatewayModules(
+            address(validatorModule),
+            address(quoteModule),
+            address(executionModule),
+            address(privacyModule)
+        );
+        gateway.setFeePolicyManager(address(feePolicyManager));
 
         // Vault auth
         vault.setAuthorizedSpender(address(gateway), true);
@@ -120,18 +146,21 @@ contract PayChainGatewayRevertTest is Test {
         RevertingAdapter revertAdapter = new RevertingAdapter();
         router.registerAdapter(DEST_CHAIN_CUSTOM, 1, address(revertAdapter));
         gateway.setDefaultBridgeType(DEST_CHAIN_CUSTOM, 1);
+        gateway.setBridgeTokenForDest(DEST_CHAIN_CUSTOM, address(token));
         vault.setAuthorizedSpender(address(revertAdapter), true);
 
         // 2. String error adapter
         StringRevertAdapter stringAdapter = new StringRevertAdapter();
         router.registerAdapter(DEST_CHAIN_STRING, 2, address(stringAdapter));
         gateway.setDefaultBridgeType(DEST_CHAIN_STRING, 2);
+        gateway.setBridgeTokenForDest(DEST_CHAIN_STRING, address(token));
         vault.setAuthorizedSpender(address(stringAdapter), true);
 
         // 3. Success adapter (control)
         SuccessAdapter okAdapter = new SuccessAdapter();
         router.registerAdapter(DEST_CHAIN_OK, 0, address(okAdapter));
         gateway.setDefaultBridgeType(DEST_CHAIN_OK, 0);
+        gateway.setBridgeTokenForDest(DEST_CHAIN_OK, address(token));
         vault.setAuthorizedSpender(address(okAdapter), true);
 
         // Fund user
@@ -143,15 +172,30 @@ contract PayChainGatewayRevertTest is Test {
     function _approveAndPay(string memory destChain) internal returns (bytes32) {
         vm.startPrank(user);
         token.approve(address(vault), 10_000e18);
-        bytes32 pid = gateway.createPayment(
-            bytes(destChain),
-            abi.encode(merchant),
-            address(token),
-            address(token),
-            100e18
-        );
+        bytes32 pid = _createPaymentV2(destChain, address(token), address(token), 100e18);
         vm.stopPrank();
         return pid;
+    }
+
+    function _createPaymentV2(
+        string memory destChain,
+        address sourceToken,
+        address destToken,
+        uint256 amount
+    ) internal returns (bytes32) {
+        IPaymentKitaGateway.PaymentRequestV2 memory req = IPaymentKitaGateway.PaymentRequestV2({
+            destChainIdBytes: bytes(destChain),
+            receiverBytes: abi.encode(merchant),
+            sourceToken: sourceToken,
+            bridgeTokenSource: address(0),
+            destToken: destToken,
+            amountInSource: amount,
+            minBridgeAmountOut: 0,
+            minDestAmountOut: 0,
+            mode: IPaymentKitaGateway.PaymentMode.REGULAR,
+            bridgeOption: 255
+        });
+        return gateway.createPayment(req);
     }
 
     // ══════════════════════════════════════════════════
@@ -167,13 +211,7 @@ contract PayChainGatewayRevertTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(RevertingAdapter.AdapterSpecificError.selector, "CCIP_FEE_TOKEN_NOT_SET")
         );
-        gateway.createPayment(
-            bytes(DEST_CHAIN_CUSTOM),
-            abi.encode(merchant),
-            address(token),
-            address(token),
-            100e18
-        );
+        _createPaymentV2(DEST_CHAIN_CUSTOM, address(token), address(token), 100e18);
         vm.stopPrank();
     }
 
@@ -186,13 +224,7 @@ contract PayChainGatewayRevertTest is Test {
 
         // Should see the adapter's string, NOT "Route payment failed"
         vm.expectRevert(bytes("Insufficient gas for LZ send"));
-        gateway.createPayment(
-            bytes(DEST_CHAIN_STRING),
-            abi.encode(merchant),
-            address(token),
-            address(token),
-            100e18
-        );
+        _createPaymentV2(DEST_CHAIN_STRING, address(token), address(token), 100e18);
         vm.stopPrank();
     }
 
@@ -217,13 +249,7 @@ contract PayChainGatewayRevertTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(RevertingAdapter.AdapterSpecificError.selector, "CCIP_FEE_TOKEN_NOT_SET")
         );
-        gateway.createPayment(
-            bytes(DEST_CHAIN_CUSTOM),
-            abi.encode(merchant),
-            address(token),
-            address(token),
-            100e18
-        );
+        _createPaymentV2(DEST_CHAIN_CUSTOM, address(token), address(token), 100e18);
         vm.stopPrank();
     }
 

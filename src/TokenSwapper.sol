@@ -7,7 +7,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "./interfaces/ISwapper.sol";
 import "./interfaces/IUniswapV4.sol";
-import "./vaults/PayChainVault.sol";
+import "./vaults/PaymentKitaVault.sol";
 
 interface IUniV3SwapRouter02 {
     struct ExactInputSingleParams {
@@ -52,8 +52,8 @@ contract TokenSwapper is ISwapper, Ownable, ReentrancyGuard {
 
     // ============ State Variables ============
 
-    /// @notice Address of PayChainVault
-    PayChainVault public vault;
+    /// @notice Address of PaymentKitaVault
+    PaymentKitaVault public vault;
 
     /// @notice Address of Uniswap V4 UniversalRouter
     address public universalRouter;
@@ -79,7 +79,7 @@ contract TokenSwapper is ISwapper, Ownable, ReentrancyGuard {
     /// @notice Direct V3 fallback pools: keccak256(tokenIn, tokenOut) => V3PoolConfig
     mapping(bytes32 => V3PoolConfig) public v3Pools;
 
-    /// @notice Whitelisted callers (PayChain contracts)
+    /// @notice Whitelisted callers (PaymentKita contracts)
     mapping(address => bool) public authorizedCallers;
 
     // ============ Constants ============
@@ -181,7 +181,7 @@ contract TokenSwapper is ISwapper, Ownable, ReentrancyGuard {
     // ============ Admin Functions ============
 
     function setVault(address _vault) external onlyOwner {
-        vault = PayChainVault(_vault);
+        vault = PaymentKitaVault(_vault);
     }
 
     function setV3Router(address _swapRouterV3) external onlyOwner {

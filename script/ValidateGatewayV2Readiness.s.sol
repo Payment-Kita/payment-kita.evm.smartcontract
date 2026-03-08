@@ -3,13 +3,11 @@ pragma solidity ^0.8.20;
 
 import "forge-std/Script.sol";
 import "forge-std/console.sol";
-import "../src/interfaces/IPayChainGateway.sol";
+import "../src/interfaces/IPaymentKitaGateway.sol";
 
-interface IGatewayV2Readiness is IPayChainGateway {
+interface IGatewayV2Readiness is IPaymentKitaGateway {
     function defaultBridgeTypes(string calldata destChainId) external view returns (uint8);
     function bridgeTokenByDestCaip2(string calldata destChainId) external view returns (address);
-    function v1DisabledGlobal() external view returns (bool);
-    function v1DisabledByDestCaip2(string calldata destChainId) external view returns (bool);
 }
 
 interface IRouterV2Readiness {
@@ -39,7 +37,7 @@ contract ValidateGatewayV2Readiness is Script {
         bool routeConfigured = router.isRouteConfigured(destCaip2, effectiveBridge);
         address laneBridgeToken = gateway.bridgeTokenByDestCaip2(destCaip2);
 
-        IPayChainGateway.PaymentRequestV2 memory req;
+        IPaymentKitaGateway.PaymentRequestV2 memory req;
         req.destChainIdBytes = bytes(destCaip2);
         req.receiverBytes = abi.encode(receiver);
         req.sourceToken = sourceToken;
@@ -48,7 +46,7 @@ contract ValidateGatewayV2Readiness is Script {
         req.amountInSource = amount;
         req.minBridgeAmountOut = 0;
         req.minDestAmountOut = 0;
-        req.mode = mode == 1 ? IPayChainGateway.PaymentMode.PRIVACY : IPayChainGateway.PaymentMode.REGULAR;
+        req.mode = mode == 1 ? IPaymentKitaGateway.PaymentMode.PRIVACY : IPaymentKitaGateway.PaymentMode.REGULAR;
         req.bridgeOption = bridgeOption;
 
         (
@@ -58,9 +56,9 @@ contract ValidateGatewayV2Readiness is Script {
             uint8 bridgeType,
             bool bridgeQuoteOk,
             string memory bridgeQuoteReason
-        ) = gateway.quotePaymentCostV2(req);
+        ) = gateway.quotePaymentCost(req);
 
-        (address approvalToken, uint256 approvalAmount, uint256 requiredNativeFee) = gateway.previewApprovalV2(req);
+        (address approvalToken, uint256 approvalAmount, uint256 requiredNativeFee) = gateway.previewApproval(req);
 
         console.log("Gateway V2 readiness");
         console.log("gateway:", gatewayAddr);
@@ -71,8 +69,6 @@ contract ValidateGatewayV2Readiness is Script {
         console.log("hasAdapter:", hasAdapter);
         console.log("routeConfigured:", routeConfigured);
         console.log("laneBridgeToken:", laneBridgeToken);
-        console.log("v1DisabledGlobal:", gateway.v1DisabledGlobal());
-        console.log("v1DisabledLane:", gateway.v1DisabledByDestCaip2(destCaip2));
         console.log("quoteBridgeType:", bridgeType);
         console.log("quoteOk:", bridgeQuoteOk);
         console.log("quoteReason:", bridgeQuoteReason);

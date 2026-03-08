@@ -1,4 +1,4 @@
-# Pay-Chain EVM Smart Contracts - Product Requirements Document
+# Payment-Kita EVM Smart Contracts - Product Requirements Document
 
 > **Component**: EVM Smart Contracts  
 > **Status**: Implementation In Progress  
@@ -6,7 +6,7 @@
 
 ## 1. Overview
 
-The **Pay-Chain EVM Smart Contracts** module acts as the secure execution layer for the cross-chain stablecoin payment gateway. It handles asset custody, cross-chain message routing, atomic token swaps via DEXs, and fee management.
+The **Payment-Kita EVM Smart Contracts** module acts as the secure execution layer for the cross-chain stablecoin payment gateway. It handles asset custody, cross-chain message routing, atomic token swaps via DEXs, and fee management.
 
 ### Key Objectives
 1.  **Trustless Execution**: No hidden admin backdoors for moving user funds (except strictly defined emergency pauses).
@@ -27,7 +27,7 @@ sequenceDiagram
     participant Frontend
     participant Backend
     participant Wallet
-    participant Gateway as PayChainGateway
+    participant Gateway as PaymentKitaGateway
 
     User->>Frontend: Select Payment Request
     Frontend->>Backend: Request Payment Details (Target Chain/Token)
@@ -53,10 +53,10 @@ The lifecycle of a payment from source chain execution to destination chain sett
 ```mermaid
 flowchart TD
     subgraph Source Chain
-        S_User[User] -->|Calls| S_Gateway[PayChainGateway]
-        S_Gateway -->|"1. Transfer Token"| S_Vault[PayChainVault]
+        S_User[User] -->|Calls| S_Gateway[PaymentKitaGateway]
+        S_Gateway -->|"1. Transfer Token"| S_Vault[PaymentKitaVault]
         S_Gateway -->|"2. Calc Fee"| S_FeeCalc[FeeCalculator]
-        S_Gateway -->|"3. Route"| S_Router[PayChainRouter]
+        S_Gateway -->|"3. Route"| S_Router[PaymentKitaRouter]
         
         S_Router -->|"Determine Adapter"| S_Adapter{Bridge Adapter}
         S_Adapter -->|Hyperbridge - Default| S_HB[Hyperbridge Sender]
@@ -72,7 +72,7 @@ flowchart TD
         D_HB -->|Receive| D_Receiver[Adapter Receiver]
         D_CCIP -->|Receive| D_Receiver
         
-        D_Receiver -->|Callback| D_Gateway[PayChainGateway]
+        D_Receiver -->|Callback| D_Gateway[PaymentKitaGateway]
         
         D_Gateway -->|"Check Token Need?"| D_CheckToken{Swap Needed?}
         
@@ -82,7 +82,7 @@ flowchart TD
         
         D_CheckToken -->|No| D_Direct[Direct Transfer]
         
-        D_Gateway -->|"Release Funds"| D_Vault[PayChainVault]
+        D_Gateway -->|"Release Funds"| D_Vault[PaymentKitaVault]
         D_Vault -->|Transfer| D_Merchant[Merchant Wallet]
     end
 ```
@@ -125,23 +125,23 @@ classDiagram
 
 ## 3. System Architecture
 
-The system uses a **Hub-and-Spoke** model. The `PayChainGateway` is the central "Hub" that coordinates all actions, while logic is delegated to specialized "Spokes" (Vault, Router, Swapper).
+The system uses a **Hub-and-Spoke** model. The `PaymentKitaGateway` is the central "Hub" that coordinates all actions, while logic is delegated to specialized "Spokes" (Vault, Router, Swapper).
 
 ```mermaid
 classDiagram
     note "Core Infrastructure"
-    class PayChainGateway {
+    class PaymentKitaGateway {
         +createPayment()
         +receivePayment()
         +withdrawFees()
     }
-    class PayChainVault {
+    class PaymentKitaVault {
         -mapping(token => amount) reserves
         +deposit()
         +withdraw()
         +approve()
     }
-    class PayChainRouter {
+    class PaymentKitaRouter {
         -mapping(chainId => adapter) adapters
         +routeMessage()
         +registerAdapter()
@@ -163,12 +163,12 @@ classDiagram
         +estimateFee()
     }
 
-    PayChainGateway --> PayChainVault : 1. Lock/Release Assets
-    PayChainGateway --> PayChainRouter : 2. Route Message
-    PayChainGateway --> TokenSwapper : 3. Swap Tokens
-    PayChainGateway --> TokenRegistry : 4. Validate Inputs
+    PaymentKitaGateway --> PaymentKitaVault : 1. Lock/Release Assets
+    PaymentKitaGateway --> PaymentKitaRouter : 2. Route Message
+    PaymentKitaGateway --> TokenSwapper : 3. Swap Tokens
+    PaymentKitaGateway --> TokenRegistry : 4. Validate Inputs
     
-    PayChainRouter --> IBridgeAdapter : Delegate to specific bridge
+    PaymentKitaRouter --> IBridgeAdapter : Delegate to specific bridge
     IBridgeAdapter <|-- HyperbridgeSender
     IBridgeAdapter <|-- CCIPSender
 ```
@@ -177,12 +177,12 @@ classDiagram
 
 ## 4. Detailed Component Specifications
 
-### 4.1 PayChainGateway (`PayChainGateway.sol`)
+### 4.1 PaymentKitaGateway (`PaymentKitaGateway.sol`)
 The primary entry point for all interactions.
 
 **State Variables:**
-- `address public vault`: Address of the PayChainVault.
-- `address public router`: Address of the PayChainRouter.
+- `address public vault`: Address of the PaymentKitaVault.
+- `address public router`: Address of the PaymentKitaRouter.
 - `address public registry`: Address of the TokenRegistry.
 - `address public swapper`: Address of the TokenSwapper.
 - `address public feeRecipient`: Wallet to receive protocol fees.
@@ -203,7 +203,7 @@ If `receivePayment` fails (e.g., receiver blacklist, swap fail):
 2.  It MUST emit a `PaymentFailed` event.
 3.  Funds stay in the Vault, marked as "Refundable" or "Retryable" for the sender/receiver.
 
-### 4.2 PayChainVault (`PayChainVault.sol`)
+### 4.2 PaymentKitaVault (`PaymentKitaVault.sol`)
 Holds all user and protocol assets. Logic-less to minimize attack surface.
 
 **Security:**
@@ -211,7 +211,7 @@ Holds all user and protocol assets. Logic-less to minimize attack surface.
 - `withdraw(token, to, amount)`: Moves funds.
 - `approve(token, spender, amount)`: Approves DEX router or Bridge to spend tokens.
 
-### 4.3 PayChainRouter (`PayChainRouter.sol`)
+### 4.3 PaymentKitaRouter (`PaymentKitaRouter.sol`)
 Routes messages based on destination chain ID and bridge preference.
 
 **Routing Logic:**
@@ -255,7 +255,7 @@ $$
 
 ## 6. Events for Indexer
 
-The `PayChain.indexer` service listens for these specific events to update the database.
+The `PaymentKita.indexer` service listens for these specific events to update the database.
 
 **PaymentCreated**
 ```solidity
@@ -357,9 +357,9 @@ We strictly adhere to "Extreme Unit Testing" principles.
 
 | Test Suite | Focus | Status |
 | :--- | :--- | :--- |
-| `PayChainGatewayTest` | End-to-end flow (Create -> Receive). | ✅ Passing |
+| `PaymentKitaGatewayTest` | End-to-end flow (Create -> Receive). | ✅ Passing |
 | `TokenSwapperV4Test` | Uniswap V4 integration, slippage, path, fuzzing. | ✅ Passing |
-| `PayChainVaultTest` | Access control, asset safety. | ✅ Passing |
+| `PaymentKitaVaultTest` | Access control, asset safety. | ✅ Passing |
 | `FeeCalculatorTest` | Math accuracy for fee computation. | ✅ Passing |
 
 Run all tests:

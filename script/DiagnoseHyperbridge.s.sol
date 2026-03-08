@@ -4,7 +4,7 @@ pragma solidity ^0.8.20;
 import "forge-std/Script.sol";
 import "../src/TokenSwapper.sol";
 import "../src/integrations/hyperbridge/HyperbridgeSender.sol";
-import "../src/PayChainGateway.sol";
+import "../src/PaymentKitaGateway.sol";
 
 contract DiagnoseHyperbridge is Script {
     address constant SENDER = 0xE6AFaA8334A1862845450B4a3fdE8cF57620faCd;

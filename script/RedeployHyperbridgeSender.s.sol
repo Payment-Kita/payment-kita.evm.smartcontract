@@ -3,9 +3,9 @@ pragma solidity ^0.8.20;
 
 import "forge-std/Script.sol";
 import "../src/TokenSwapper.sol";
-import "../src/PayChainGateway.sol";
-import "../src/PayChainRouter.sol";
-import "../src/vaults/PayChainVault.sol";
+import "../src/PaymentKitaGateway.sol";
+import "../src/PaymentKitaRouter.sol";
+import "../src/vaults/PaymentKitaVault.sol";
 import "../src/integrations/hyperbridge/HyperbridgeSender.sol";
 import "../src/integrations/hyperbridge/HyperbridgeReceiver.sol";
 import "../src/integrations/ccip/CCIPReceiver.sol";
@@ -54,7 +54,7 @@ contract RedeployHyperbridgeSender is Script {
         );
 
         // 3. Update all components to use new Swapper
-        PayChainGateway(gateway).setSwapper(address(newSwapper));
+        PaymentKitaGateway(gateway).setSwapper(address(newSwapper));
         CCIPReceiverAdapter(ccipReceiver).setSwapper(address(newSwapper));
         LayerZeroReceiverAdapter(lzReceiver).setSwapper(address(newSwapper));
         HyperbridgeReceiver(hbReceiver).setSwapper(address(newSwapper));
@@ -73,13 +73,13 @@ contract RedeployHyperbridgeSender is Script {
 
         // 5. Configure New Sender
         newSwapper.setAuthorizedCaller(address(newSender), true);
-        PayChainGateway(gateway).setAuthorizedAdapter(address(newSender), true);
-        PayChainVault(vault).setAuthorizedSpender(address(newSender), true);
+        PaymentKitaGateway(gateway).setAuthorizedAdapter(address(newSender), true);
+        PaymentKitaVault(vault).setAuthorizedSpender(address(newSender), true);
         console.log("New HyperbridgeSender authorized and configured");
 
         // 6. Register on Router (Polygon destination)
         string memory chainId = "eip155:137";
-        PayChainRouter(router).registerAdapter(chainId, 0, address(newSender));
+        PaymentKitaRouter(router).registerAdapter(chainId, 0, address(newSender));
         console.log("Registered new Hyperbridge sender on Router for Polygon");
 
         // 7. Configure Destination Contract on Sender

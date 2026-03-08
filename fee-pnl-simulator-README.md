@@ -1,6 +1,6 @@
 # Fee P&L Simulator (CSV Template)
 
-File: `pay-chain.evm.smartcontract/fee-pnl-simulator-template.csv`
+File: `payment-kita.evm.smartcontract/fee-pnl-simulator-template.csv`
 
 ## Tujuan
 Model cepat untuk menentukan fee per lane yang:

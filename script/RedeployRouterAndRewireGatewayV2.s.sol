@@ -2,8 +2,8 @@
 pragma solidity ^0.8.20;
 
 import "forge-std/Script.sol";
-import "../src/PayChainRouter.sol";
-import "../src/PayChainGateway.sol";
+import "../src/PaymentKitaRouter.sol";
+import "../src/PaymentKitaGateway.sol";
 import "../src/integrations/hyperbridge/HyperbridgeSender.sol";
 
 interface IVaultRouterRewire {
@@ -45,12 +45,12 @@ contract RedeployRouterAndRewireGatewayV2 is Script {
         vm.startBroadcast(pk);
 
         // 1) Deploy new router
-        PayChainRouter routerV2 = new PayChainRouter();
+        PaymentKitaRouter routerV2 = new PaymentKitaRouter();
 
         // 2) Preserve bridge mode config from old router (0,1,2)
         for (uint8 bridgeType = 0; bridgeType < 3; bridgeType++) {
             uint8 mode = IRouterConfigSource(oldRouter).bridgeModes(bridgeType);
-            routerV2.setBridgeMode(bridgeType, PayChainRouter.BridgeMode(mode));
+            routerV2.setBridgeMode(bridgeType, PaymentKitaRouter.BridgeMode(mode));
         }
 
         // 3) Register existing non-Hyperbridge adapters from old router
@@ -78,11 +78,11 @@ contract RedeployRouterAndRewireGatewayV2 is Script {
         // 5) Register new HB sender in routerV2 + authorize spender/adapter
         routerV2.registerAdapter(destCaip2, 0, address(hbSenderV2));
         IVaultRouterRewire(vault).setAuthorizedSpender(address(hbSenderV2), true);
-        PayChainGateway(gatewayV2).setAuthorizedAdapter(address(hbSenderV2), true);
+        PaymentKitaGateway(gatewayV2).setAuthorizedAdapter(address(hbSenderV2), true);
 
         // 6) Rewire gateway to new router
-        PayChainGateway(gatewayV2).setRouter(address(routerV2));
-        PayChainGateway(gatewayV2).setDefaultBridgeType(destCaip2, 0);
+        PaymentKitaGateway(gatewayV2).setRouter(address(routerV2));
+        PaymentKitaGateway(gatewayV2).setDefaultBridgeType(destCaip2, 0);
 
         // 7) Keep swapper/gateway linkage valid
         try ITokenSwapperRouterRewire(swapper).setAuthorizedCaller(gatewayV2, true) {
@@ -94,7 +94,7 @@ contract RedeployRouterAndRewireGatewayV2 is Script {
         // 8) Deauthorize old HB sender (optional cleanup)
         if (cleanupOldHyperbridgeSender && oldHyperbridgeSender != address(0)) {
             IVaultRouterRewire(vault).setAuthorizedSpender(oldHyperbridgeSender, false);
-            PayChainGateway(gatewayV2).setAuthorizedAdapter(oldHyperbridgeSender, false);
+            PaymentKitaGateway(gatewayV2).setAuthorizedAdapter(oldHyperbridgeSender, false);
         }
 
         vm.stopBroadcast();

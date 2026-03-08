@@ -2,9 +2,9 @@
 pragma solidity ^0.8.20;
 
 import "forge-std/Script.sol";
-import "../src/vaults/PayChainVault.sol";
-import "../src/PayChainRouter.sol";
-import "../src/PayChainGateway.sol";
+import "../src/vaults/PaymentKitaVault.sol";
+import "../src/PaymentKitaRouter.sol";
+import "../src/PaymentKitaGateway.sol";
 import "../src/TokenRegistry.sol";
 import "../src/TokenSwapper.sol";
 import "../src/integrations/ccip/CCIPSender.sol";
@@ -81,8 +81,8 @@ abstract contract DeployCommon is Script {
     function deploySystem(
         DeploymentConfig memory config
     ) internal returns (
-        PayChainGateway gateway_,
-        PayChainRouter router_,
+        PaymentKitaGateway gateway_,
+        PaymentKitaRouter router_,
         TokenRegistry registry_,
         TokenSwapper swapper_
     ) {
@@ -94,8 +94,8 @@ abstract contract DeployCommon is Script {
         DeploymentConfig memory config,
         RouteBootstrapConfig memory routeConfig
     ) internal returns (
-        PayChainGateway gateway_, 
-        PayChainRouter router_, 
+        PaymentKitaGateway gateway_, 
+        PaymentKitaRouter router_, 
         TokenRegistry registry_,
         TokenSwapper swapper_
     ) {
@@ -112,21 +112,21 @@ abstract contract DeployCommon is Script {
 
 
 
-        PayChainVault vault = new PayChainVault();
-        console.log("PayChainVault deployed at:", address(vault));
+        PaymentKitaVault vault = new PaymentKitaVault();
+        console.log("PaymentKitaVault deployed at:", address(vault));
 
-        PayChainRouter routerInstance = new PayChainRouter();
+        PaymentKitaRouter routerInstance = new PaymentKitaRouter();
         router_ = routerInstance;
-        console.log("PayChainRouter deployed at:", address(router_));
+        console.log("PaymentKitaRouter deployed at:", address(router_));
 
         // 2. Deploy Gateway
-        gateway_ = new PayChainGateway(
+        gateway_ = new PaymentKitaGateway(
             address(vault),
             address(router_),
             address(registry_),
             config.feeRecipient
         );
-        console.log("PayChainGateway deployed at:", address(gateway_));
+        console.log("PaymentKitaGateway deployed at:", address(gateway_));
 
         // 3. Deploy Swapper
         swapper_ = new TokenSwapper(

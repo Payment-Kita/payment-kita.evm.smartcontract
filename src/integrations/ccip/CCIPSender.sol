@@ -5,7 +5,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "../../interfaces/IBridgeAdapter.sol";
-import "../../vaults/PayChainVault.sol";
+import "../../vaults/PaymentKitaVault.sol";
 import "./IRouterClient.sol";
 import "./Client.sol";
 
@@ -18,7 +18,7 @@ contract CCIPSender is IBridgeAdapter, Ownable {
 
     // ============ State Variables ============
 
-    PayChainVault public vault;
+    PaymentKitaVault public vault;
     IRouterClient public router;
     
     /// @notice mapping(chain CAIP-2 string => CCIP chainSelector)
@@ -40,7 +40,7 @@ contract CCIPSender is IBridgeAdapter, Ownable {
     /// @notice Default gas limit for destinations
     uint256 public constant DEFAULT_GAS_LIMIT = 200_000;
 
-    /// @notice Allowed upstream contracts that may dispatch sendMessage (e.g. PayChainRouter)
+    /// @notice Allowed upstream contracts that may dispatch sendMessage (e.g. PaymentKitaRouter)
     mapping(address => bool) public authorizedCallers;
 
     error ChainSelectorMissing(string chainId);
@@ -70,7 +70,7 @@ contract CCIPSender is IBridgeAdapter, Ownable {
         address _vault,
         address _router
     ) Ownable(msg.sender) {
-        vault = PayChainVault(_vault);
+        vault = PaymentKitaVault(_vault);
         router = IRouterClient(_router);
     }
 
