@@ -20,7 +20,7 @@
 	validate-gateway-v2-dry \
 	set-fee-strategy-dry set-fee-strategy-broadcast validate-fee-strategy-dry \
 	validate-gateway-selector-gate \
-	validate-bytecode-gate validate-security-regression validate-phase7-gate privacy-regression \
+	validate-bytecode-gate validate-security-regression validate-phase7-gate validate-privacy-route-gate privacy-regression \
 	deploy-gateway-modular-dry deploy-gateway-modular-broadcast \
 	deploy-gateway-modular-v2-dry deploy-gateway-modular-v2-broadcast deploy-gateway-modular-v2-verify \
 	wire-gateway-modules-dry wire-gateway-modules-broadcast \
@@ -118,6 +118,7 @@ help:
 	@echo "  make validate-bytecode-gate      - enforce EIP-170 + runtime margin"
 	@echo "  make validate-security-regression - run core gateway/adapter/fee suites"
 	@echo "  make validate-phase7-gate         - run both gates"
+	@echo "  make validate-privacy-route-gate  - post-deploy privacy wiring + quote probe gate"
 	@echo "  make privacy-regression           - run privacy path regression suites"
 	@echo ""
 	@echo "Gateway modular rollout (Phase 6):"
@@ -549,6 +550,20 @@ validate-security-regression:
 validate-phase7-gate:
 	@$(MAKE) validate-bytecode-gate
 	@$(MAKE) validate-security-regression
+
+validate-privacy-route-gate:
+	@test -n "$(BASE_RPC_URL)" || (echo "Missing BASE_RPC_URL" && exit 1)
+	@test -n "$(PRIVACY_GATE_GATEWAY)" || (echo "Missing PRIVACY_GATE_GATEWAY" && exit 1)
+	@test -n "$(PRIVACY_GATE_VAULT)" || (echo "Missing PRIVACY_GATE_VAULT" && exit 1)
+	@test -n "$(PRIVACY_GATE_SWAPPER)" || (echo "Missing PRIVACY_GATE_SWAPPER" && exit 1)
+	@forge script script/ValidatePrivacyDeploymentReadiness.s.sol:ValidatePrivacyDeploymentReadiness \
+		--rpc-url $(BASE_RPC_URL) \
+		$(VERBOSITY)
+	@if [ "$(PRIVACY_GATE_SKIP_TESTS)" != "1" ]; then \
+		$(MAKE) privacy-regression; \
+	else \
+		echo "Skipping privacy regression tests because PRIVACY_GATE_SKIP_TESTS=1"; \
+	fi
 
 privacy-regression:
 	@forge test --offline --match-contract PaymentKitaGatewayV2Phase1Test --match-test Privacy

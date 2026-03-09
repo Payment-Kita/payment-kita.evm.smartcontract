@@ -42,6 +42,50 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
     error ExecutionModuleNotConfigured();
     error ValidatorModuleNotConfigured();
     error FeePolicyManagerNotConfigured();
+    error InvalidVault();
+    error InvalidRouter();
+    error InvalidRegistry();
+    error InvalidFeeRecipient();
+    error InvalidValidatorModule();
+    error InvalidQuoteModule();
+    error InvalidExecutionModule();
+    error InvalidPrivacyModule();
+    error InvalidFeeManager();
+    error InvalidBridgeToken();
+    error BridgeTokenNotSupported();
+    error InvalidFeeCap();
+    error NativeFeeBufferTooHigh();
+    error EmptyDestChainId();
+    error OnlySameChain();
+    error InvalidDestinationToken();
+    error DestinationTokenNotSupported();
+    error SwapperNotConfigured();
+    error RegularModeRequired();
+    error PrivacyModeRequired();
+    error MissingPrivacyIntent();
+    error InvalidStealthReceiver();
+    error StealthReceiverMustDiffer();
+    error RoutingReentrancy();
+    error InvalidBridgeMessageId();
+    error UnauthorizedAdapter();
+    error PrivacyForwardAlreadyCompleted();
+    error PrivacyPaymentNotFound();
+    error MissingFinalReceiver();
+    error InvalidForwardToken();
+    error InvalidForwardAmount();
+    error PrivacyModuleUnavailable();
+    error BridgeTokenNotConfigured();
+    error SourceSideSwapDisabled();
+    error NoRouteToBridgeToken();
+    error TokenBridgeRequiresSameToken();
+    error PaymentNotFound();
+    error UnauthorizedCaller();
+    error InvalidPaymentStatus();
+    error NoBridgeMessage();
+    error MessageNotFound();
+    error RetryLimitReached();
+    error PaymentNotFailed();
+    error NotAuthorizedAdapter();
 
     // ============ State Variables ============
 
@@ -138,22 +182,37 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
         uint256 bridgeFeeTokenEq,
         uint256 totalSourceTokenRequired
     );
-    event PrivacyPaymentCreated(bytes32 indexed paymentId, bytes32 indexed intentId, address indexed stealthReceiver);
+    event PrivacyPaymentCreated(
+        bytes32 indexed paymentId,
+        bytes32 indexed intentId,
+        address indexed stealthReceiver,
+        address finalReceiver
+    );
     event PrivacyForwardRequested(
         bytes32 indexed paymentId,
         address indexed stealthReceiver,
         address indexed finalReceiver,
         address token,
-        uint256 amount
+        uint256 amount,
+        bool sameChain,
+        address actor
     );
     event PrivacyForwardCompleted(
         bytes32 indexed paymentId,
         address indexed stealthReceiver,
         address indexed finalReceiver,
         address token,
-        uint256 amount
+        uint256 amount,
+        bool sameChain,
+        address actor
     );
-    event PrivacyForwardFailed(bytes32 indexed paymentId, uint8 retryCount, string reason);
+    event PrivacyForwardFailed(
+        bytes32 indexed paymentId,
+        uint8 retryCount,
+        string reason,
+        bool sameChain,
+        address actor
+    );
     event GatewayModulesUpdated(
         address indexed validatorModule,
         address indexed quoteModule,
@@ -175,6 +234,8 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
     mapping(bytes32 => address) public privacyFinalReceiverByPayment;
     mapping(bytes32 => bool) public privacyForwardCompleted;
     mapping(bytes32 => uint8) public privacyForwardRetryCount;
+    mapping(bytes32 => address) public paymentSettledToken;
+    mapping(bytes32 => uint256) public paymentSettledAmount;
 
     // ============ Constructor ============
 
@@ -184,10 +245,10 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
         address _tokenRegistry,
         address _feeRecipient
     ) Ownable(msg.sender) {
-        require(_vault != address(0), "Invalid vault");
-        require(_router != address(0), "Invalid router");
-        require(_tokenRegistry != address(0), "Invalid registry");
-        require(_feeRecipient != address(0), "Invalid fee recipient");
+        if (_vault == address(0)) revert InvalidVault();
+        if (_router == address(0)) revert InvalidRouter();
+        if (_tokenRegistry == address(0)) revert InvalidRegistry();
+        if (_feeRecipient == address(0)) revert InvalidFeeRecipient();
 
         vault = PaymentKitaVault(_vault);
         router = PaymentKitaRouter(_router);
@@ -199,25 +260,25 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
     // ============ Admin Functions ============
 
     function setVault(address _vault) external onlyOwner {
-        require(_vault != address(0), "Invalid vault");
+        if (_vault == address(0)) revert InvalidVault();
         emit VaultUpdated(address(vault), _vault);
         vault = PaymentKitaVault(_vault);
     }
 
     function setRouter(address _router) external onlyOwner {
-        require(_router != address(0), "Invalid router");
+        if (_router == address(0)) revert InvalidRouter();
         emit RouterUpdated(address(router), _router);
         router = PaymentKitaRouter(_router);
     }
 
     function setTokenRegistry(address _tokenRegistry) external onlyOwner {
-        require(_tokenRegistry != address(0), "Invalid registry");
+        if (_tokenRegistry == address(0)) revert InvalidRegistry();
         emit TokenRegistryUpdated(address(tokenRegistry), _tokenRegistry);
         tokenRegistry = TokenRegistry(_tokenRegistry);
     }
 
     function setFeeRecipient(address _feeRecipient) external onlyOwner {
-        require(_feeRecipient != address(0), "Invalid fee recipient");
+        if (_feeRecipient == address(0)) revert InvalidFeeRecipient();
         emit FeeRecipientUpdated(feeRecipient, _feeRecipient);
         feeRecipient = _feeRecipient;
     }
@@ -232,10 +293,10 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
         address _executionModule,
         address _privacyModule
     ) external onlyOwner {
-        require(_validatorModule != address(0), "Invalid validator module");
-        require(_quoteModule != address(0), "Invalid quote module");
-        require(_executionModule != address(0), "Invalid execution module");
-        require(_privacyModule != address(0), "Invalid privacy module");
+        if (_validatorModule == address(0)) revert InvalidValidatorModule();
+        if (_quoteModule == address(0)) revert InvalidQuoteModule();
+        if (_executionModule == address(0)) revert InvalidExecutionModule();
+        if (_privacyModule == address(0)) revert InvalidPrivacyModule();
 
         validatorModule = _validatorModule;
         quoteModule = _quoteModule;
@@ -246,7 +307,7 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
     }
 
     function setFeePolicyManager(address _manager) external onlyOwner {
-        require(_manager != address(0), "Invalid fee manager");
+        if (_manager == address(0)) revert InvalidFeeManager();
         emit FeePolicyManagerUpdated(feePolicyManager, _manager);
         feePolicyManager = _manager;
     }
@@ -262,8 +323,8 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
     }
 
     function setBridgeTokenForDest(string calldata destChainId, address bridgeTokenSource) external onlyOwner {
-        require(bridgeTokenSource != address(0), "Invalid bridge token");
-        require(tokenRegistry.isTokenSupported(bridgeTokenSource), "Bridge token not supported");
+        if (bridgeTokenSource == address(0)) revert InvalidBridgeToken();
+        if (!tokenRegistry.isTokenSupported(bridgeTokenSource)) revert BridgeTokenNotSupported();
         bridgeTokenByDestCaip2[destChainId] = bridgeTokenSource;
         emit BridgeTokenForDestSet(destChainId, bridgeTokenSource);
     }
@@ -279,7 +340,7 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
         uint256 minFee,
         uint256 maxFee
     ) external onlyOwner {
-        require(maxFee == 0 || minFee <= maxFee, "Invalid fee cap");
+        if (maxFee != 0 && minFee > maxFee) revert InvalidFeeCap();
         platformFeePolicy = PlatformFeePolicy({
             enabled: enabled,
             perByteRate: perByteRate,
@@ -292,7 +353,7 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
     }
 
     function setNativeFeeBufferBps(uint256 bps) external onlyOwner {
-        require(bps <= 5000, "Buffer too high");
+        if (bps > 5000) revert NativeFeeBufferTooHigh();
         emit NativeFeeBufferUpdated(nativeFeeBufferBps, bps);
         nativeFeeBufferBps = bps;
     }
@@ -309,12 +370,12 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
         uint256 minAmountOut,
         uint8 bridgeOption
     ) internal returns (bytes32 paymentId) {
-        require(destChainIdBytes.length > 0, "Empty dest chain ID");
+        if (destChainIdBytes.length == 0) revert EmptyDestChainId();
         bridgeOption; // same-chain path ignores bridge option by design
 
         string memory destChainId = string(destChainIdBytes);
         string memory sourceChainId = currentChainCaip2;
-        require(keccak256(bytes(destChainId)) == keccak256(bytes(sourceChainId)), "Only same-chain");
+        if (keccak256(bytes(destChainId)) != keccak256(bytes(sourceChainId))) revert OnlySameChain();
 
         address receiver = _validateCreateAndDecodeReceiver(
             receiverBytes,
@@ -381,9 +442,9 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
         if (sourceToken == destToken) {
             vault.pushTokens(sourceToken, receiver, amount);
         } else {
-            require(destToken != address(0), "Invalid destination token");
-            require(tokenRegistry.isTokenSupported(destToken), "Destination token not supported");
-            require(address(swapper) != address(0), "Swapper not configured");
+            if (destToken == address(0)) revert InvalidDestinationToken();
+            if (!tokenRegistry.isTokenSupported(destToken)) revert DestinationTokenNotSupported();
+            if (address(swapper) == address(0)) revert SwapperNotConfigured();
             settledAmount = IVaultSwapper(address(swapper)).swapFromVault(
                 sourceToken,
                 destToken,
@@ -392,6 +453,8 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
                 receiver
             );
         }
+        paymentSettledToken[paymentId] = sourceToken == destToken ? sourceToken : destToken;
+        paymentSettledAmount[paymentId] = settledAmount;
 
         emit PaymentCompleted(paymentId, settledAmount);
         if (executionModule != address(0)) {
@@ -425,7 +488,7 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
         whenNotPaused
         returns (bytes32 paymentId)
     {
-        require(req.mode == PaymentMode.REGULAR, "Use createPaymentPrivate for privacy");
+        if (req.mode != PaymentMode.REGULAR) revert RegularModeRequired();
         return _createPaymentV2Internal(req, req.bridgeOption, req.receiverBytes);
     }
 
@@ -433,9 +496,9 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
         PaymentRequestV2 calldata req,
         PrivateRouting calldata privacy
     ) external payable override nonReentrant whenNotPaused returns (bytes32 paymentId) {
-        require(req.mode == PaymentMode.PRIVACY, "Invalid mode for private payment");
-        require(privacy.intentId != bytes32(0), "Missing privacy intent");
-        require(privacy.stealthReceiver != address(0), "Invalid stealth receiver");
+        if (req.mode != PaymentMode.PRIVACY) revert PrivacyModeRequired();
+        if (privacy.intentId == bytes32(0)) revert MissingPrivacyIntent();
+        if (privacy.stealthReceiver == address(0)) revert InvalidStealthReceiver();
 
         address finalReceiver = _validateCreateAndDecodeReceiver(
             req.receiverBytes,
@@ -444,6 +507,7 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
             req.amountInSource,
             false
         );
+        if (privacy.stealthReceiver == finalReceiver) revert StealthReceiverMustDiffer();
 
         bytes memory privateReceiverBytes = abi.encode(privacy.stealthReceiver);
         paymentId = _createPaymentV2Internal(req, req.bridgeOption, privateReceiverBytes);
@@ -461,13 +525,18 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
                 msg.sender
             );
         }
-        emit PrivacyPaymentCreated(paymentId, privacy.intentId, privacy.stealthReceiver);
+        emit PrivacyPaymentCreated(paymentId, privacy.intentId, privacy.stealthReceiver, finalReceiver);
+
+        bool sameChain = keccak256(req.destChainIdBytes) == keccak256(bytes(currentChainCaip2));
+        if (sameChain) {
+            _tryFinalizeSameChainPrivacyForward(paymentId, msg.sender);
+        }
     }
 
     function createPaymentDefaultBridge(
         PaymentRequestV2 calldata req
     ) external payable override nonReentrant whenNotPaused returns (bytes32 paymentId) {
-        require(req.mode == PaymentMode.REGULAR, "Use createPaymentPrivate for privacy");
+        if (req.mode != PaymentMode.REGULAR) revert RegularModeRequired();
         return _createPaymentV2Internal(req, BRIDGE_OPTION_DEFAULT, req.receiverBytes);
     }
 
@@ -507,7 +576,7 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
     }
 
     function _routeWithStoredMessage(bytes32 paymentId, uint256 nativeFeeValue) internal {
-        require(!_isRoutingMessage, "Routing reentrancy");
+        if (_isRoutingMessage) revert RoutingReentrancy();
         _isRoutingMessage = true;
         emit MessageRoutingLockUpdated(true);
 
@@ -526,7 +595,7 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
             assembly { revert(add(reason, 0x20), mload(reason)) }
         }
 
-        require(bridgeMessageId != bytes32(0), "Invalid bridge message id");
+        if (bridgeMessageId == bytes32(0)) revert InvalidBridgeMessageId();
         paymentToBridgeMessage[paymentId] = bridgeMessageId;
         bridgeMessageToPayment[bridgeMessageId] = paymentId;
         emit PaymentExecuted(paymentId, bridgeMessageId);
@@ -544,54 +613,61 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
     function finalizeIncomingPayment(
         bytes32 paymentId,
         address /* receiver */,
-        address /* token */,
+        address token,
         uint256 amount
     ) external {
         // Simple auth check: Sender must be authorized in Vault (simplifies permission management)
-        require(vault.authorizedSpenders(msg.sender), "Unauthorized adapter");
+        if (!vault.authorizedSpenders(msg.sender)) revert UnauthorizedAdapter();
 
         emit PaymentCompleted(paymentId, amount);
         if (executionModule != address(0)) {
             IGatewayExecutionModule(executionModule).onIncomingFinalized(paymentId, amount);
         }
+        paymentSettledToken[paymentId] = token;
+        paymentSettledAmount[paymentId] = amount;
         
         // Note: The Adapter is responsible for transferring the tokens to the receiver.
         // We just record the event/state here.
     }
 
     function finalizePrivacyForward(bytes32 paymentId, address token, uint256 amount) external override {
-        require(vault.authorizedSpenders(msg.sender), "Unauthorized adapter");
-        require(!privacyForwardCompleted[paymentId], "Privacy forward already completed");
+        if (!vault.authorizedSpenders(msg.sender)) revert UnauthorizedAdapter();
+        if (privacyForwardCompleted[paymentId]) revert PrivacyForwardAlreadyCompleted();
 
         address stealthReceiver = privacyStealthByPayment[paymentId];
         address finalReceiver = privacyFinalReceiverByPayment[paymentId];
-        require(stealthReceiver != address(0), "Privacy payment not found");
-        require(finalReceiver != address(0), "Missing final receiver");
+        if (stealthReceiver == address(0)) revert PrivacyPaymentNotFound();
+        if (finalReceiver == address(0)) revert MissingFinalReceiver();
+        if (stealthReceiver == finalReceiver) revert StealthReceiverMustDiffer();
+        if (token == address(0)) revert InvalidForwardToken();
+        if (amount == 0) revert InvalidForwardAmount();
+        if (privacyModule == address(0)) revert PrivacyModuleUnavailable();
 
-        emit PrivacyForwardRequested(paymentId, stealthReceiver, finalReceiver, token, amount);
+        bool sameChain = _isSameChainPayment(paymentId);
+        emit PrivacyForwardRequested(paymentId, stealthReceiver, finalReceiver, token, amount, sameChain, msg.sender);
+
+        IGatewayPrivacyModule(privacyModule).forwardFromStealth(
+            paymentId,
+            stealthReceiver,
+            finalReceiver,
+            token,
+            amount,
+            msg.sender,
+            sameChain
+        );
 
         privacyForwardCompleted[paymentId] = true;
-        if (privacyModule != address(0)) {
-            IGatewayPrivacyModule(privacyModule).recordPrivacyForward(
-                paymentId,
-                stealthReceiver,
-                finalReceiver,
-                token,
-                amount,
-                msg.sender
-            );
-        }
+        paymentSettledToken[paymentId] = token;
+        paymentSettledAmount[paymentId] = amount;
 
-        emit PrivacyForwardCompleted(paymentId, stealthReceiver, finalReceiver, token, amount);
+        emit PrivacyForwardCompleted(paymentId, stealthReceiver, finalReceiver, token, amount, sameChain, msg.sender);
     }
 
     function reportPrivacyForwardFailure(bytes32 paymentId, string calldata reason) external override {
-        require(vault.authorizedSpenders(msg.sender), "Unauthorized adapter");
-        require(!privacyForwardCompleted[paymentId], "Privacy forward already completed");
-        require(privacyStealthByPayment[paymentId] != address(0), "Privacy payment not found");
-
-        privacyForwardRetryCount[paymentId] += 1;
-        emit PrivacyForwardFailed(paymentId, privacyForwardRetryCount[paymentId], reason);
+        if (!vault.authorizedSpenders(msg.sender)) revert UnauthorizedAdapter();
+        if (privacyForwardCompleted[paymentId]) revert PrivacyForwardAlreadyCompleted();
+        if (privacyStealthByPayment[paymentId] == address(0)) revert PrivacyPaymentNotFound();
+        _recordPrivacyForwardFailure(paymentId, reason, _isSameChainPayment(paymentId), msg.sender);
     }
 
     // ============ Internal Helper ============
@@ -672,8 +748,8 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
         if (resolved == address(0)) {
             resolved = bridgeTokenByDestCaip2[destChainId];
         }
-        require(resolved != address(0), "Bridge token not configured");
-        require(tokenRegistry.isTokenSupported(resolved), "Bridge token not supported");
+        if (resolved == address(0)) revert BridgeTokenNotConfigured();
+        if (!tokenRegistry.isTokenSupported(resolved)) revert BridgeTokenNotSupported();
         return resolved;
     }
 
@@ -813,7 +889,7 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
         uint8 bridgeOption,
         bytes memory receiverBytes
     ) internal returns (bytes32 paymentId) {
-        require(req.destChainIdBytes.length > 0, "Empty dest chain ID");
+        if (req.destChainIdBytes.length == 0) revert EmptyDestChainId();
 
         string memory destChainId = string(req.destChainIdBytes);
         string memory sourceChainId = currentChainCaip2;
@@ -892,10 +968,10 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
         uint256 bridgedAmount = req.amountInSource;
         address bridgedSourceToken = req.sourceToken;
         if (bridgedSourceToken != bridgeTokenSource) {
-            require(enableSourceSideSwap, "Source-side swap disabled");
-            require(address(swapper) != address(0), "Swapper not configured");
+            if (!enableSourceSideSwap) revert SourceSideSwapDisabled();
+            if (address(swapper) == address(0)) revert SwapperNotConfigured();
             (bool exists,,) = swapper.findRoute(bridgedSourceToken, bridgeTokenSource);
-            require(exists, "No route to bridge token");
+            if (!exists) revert NoRouteToBridgeToken();
 
             bridgedAmount = IVaultSwapper(address(swapper)).swapFromVault(
                 bridgedSourceToken,
@@ -913,7 +989,7 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
             router.bridgeModes(bridgeType) == PaymentKitaRouter.BridgeMode.TOKEN_BRIDGE &&
             bridgedSourceToken != req.destToken
         ) {
-            revert("TOKEN_BRIDGE requires same token");
+            revert TokenBridgeRequiresSameToken();
         }
 
         IBridgeAdapter.BridgeMessage memory bridgeMessage = IBridgeAdapter.BridgeMessage({
@@ -972,6 +1048,39 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
         return fee + ((fee * nativeFeeBufferBps) / 10_000);
     }
 
+    function _isSameChainPayment(bytes32 paymentId) internal view returns (bool) {
+        Payment storage payment = payments[paymentId];
+        if (payment.sender == address(0)) return false;
+        return keccak256(bytes(payment.sourceChainId)) == keccak256(bytes(payment.destChainId));
+    }
+
+    function _recordPrivacyForwardFailure(
+        bytes32 paymentId,
+        string memory reason,
+        bool sameChain,
+        address actor
+    ) internal {
+        unchecked {
+            privacyForwardRetryCount[paymentId] += 1;
+        }
+        emit PrivacyForwardFailed(paymentId, privacyForwardRetryCount[paymentId], reason, sameChain, actor);
+    }
+
+    function _tryFinalizeSameChainPrivacyForward(bytes32 paymentId, address actor) internal {
+        address settledToken = paymentSettledToken[paymentId];
+        uint256 settledAmount = paymentSettledAmount[paymentId];
+        if (settledToken == address(0) || settledAmount == 0) {
+            _recordPrivacyForwardFailure(paymentId, "PRIVACY_SETTLEMENT_NOT_READY", true, actor);
+            return;
+        }
+
+        try this.finalizePrivacyForward(paymentId, settledToken, settledAmount) {
+            return;
+        } catch {
+            _recordPrivacyForwardFailure(paymentId, "PRIVACY_FORWARD_FAILED_SAME_CHAIN", true, actor);
+        }
+    }
+
     function _getTokenDecimals(address token) internal view returns (uint8) {
         uint8 regDec = tokenRegistry.tokenDecimals(token);
         if (regDec > 0) return regDec;
@@ -1008,13 +1117,10 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
     // Implement abstract functions from interface
     function executePayment(bytes32 paymentId) external payable override nonReentrant whenNotPaused {
         Payment storage payment = payments[paymentId];
-        require(payment.sender != address(0), "Payment not found");
-        require(payment.sender == msg.sender || msg.sender == owner(), "Unauthorized");
-        require(
-            payment.status == PaymentStatus.Processing || payment.status == PaymentStatus.Failed,
-            "Invalid payment status"
-        );
-        require(bytes(paymentMessages[paymentId].destChainId).length > 0, "No bridge message");
+        if (payment.sender == address(0)) revert PaymentNotFound();
+        if (!(payment.sender == msg.sender || msg.sender == owner())) revert UnauthorizedCaller();
+        if (!(payment.status == PaymentStatus.Processing || payment.status == PaymentStatus.Failed)) revert InvalidPaymentStatus();
+        if (bytes(paymentMessages[paymentId].destChainId).length == 0) revert NoBridgeMessage();
 
         payment.status = PaymentStatus.Processing;
         _routeWithStoredMessage(paymentId, msg.value);
@@ -1022,11 +1128,11 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
     
     function retryMessage(bytes32 messageId) external override nonReentrant whenNotPaused {
         bytes32 paymentId = bridgeMessageToPayment[messageId];
-        require(paymentId != bytes32(0), "Message not found");
+        if (paymentId == bytes32(0)) revert MessageNotFound();
 
         Payment storage payment = payments[paymentId];
-        require(payment.sender == msg.sender || msg.sender == owner(), "Unauthorized");
-        require(paymentRetryCount[paymentId] < MAX_RETRY_ATTEMPTS, "Retry limit reached");
+        if (!(payment.sender == msg.sender || msg.sender == owner())) revert UnauthorizedCaller();
+        if (paymentRetryCount[paymentId] >= MAX_RETRY_ATTEMPTS) revert RetryLimitReached();
 
         paymentRetryCount[paymentId] += 1;
         emit PaymentRetryRequested(paymentId, messageId, paymentRetryCount[paymentId]);
@@ -1038,8 +1144,8 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
 
     function processRefund(bytes32 paymentId) external override {
         Payment storage payment = payments[paymentId];
-        require(payment.sender == msg.sender || msg.sender == owner(), "Unauthorized");
-        require(payment.status == PaymentStatus.Failed, "Not failed");
+        if (!(payment.sender == msg.sender || msg.sender == owner())) revert UnauthorizedCaller();
+        if (payment.status != PaymentStatus.Failed) revert PaymentNotFailed();
         
         payment.status = PaymentStatus.Refunded;
         
@@ -1052,13 +1158,10 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
     /// @notice Adapter-safe fail+refund path for timeout/failure callbacks
     /// @dev Allows authorized adapters to atomically fail and refund a payment.
     function adapterFailAndRefund(bytes32 paymentId, string calldata reason) external {
-        require(isAuthorizedAdapter[msg.sender], "Not authorized adapter");
+        if (!isAuthorizedAdapter[msg.sender]) revert NotAuthorizedAdapter();
         Payment storage payment = payments[paymentId];
-        require(payment.sender != address(0), "Payment not found");
-        require(
-            payment.status == PaymentStatus.Processing || payment.status == PaymentStatus.Failed,
-            "Invalid payment status"
-        );
+        if (payment.sender == address(0)) revert PaymentNotFound();
+        if (!(payment.status == PaymentStatus.Processing || payment.status == PaymentStatus.Failed)) revert InvalidPaymentStatus();
 
         payment.status = PaymentStatus.Failed;
         emit PaymentFailed(paymentId, reason);
@@ -1070,9 +1173,9 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
 
     /// @notice Mark a payment as failed (called by authorized adapters on timeout/bridge failure)
     function markPaymentFailed(bytes32 paymentId, string calldata reason) external {
-        require(isAuthorizedAdapter[msg.sender], "Not authorized adapter");
+        if (!isAuthorizedAdapter[msg.sender]) revert NotAuthorizedAdapter();
         Payment storage payment = payments[paymentId];
-        require(payment.sender != address(0), "Payment not found");
+        if (payment.sender == address(0)) revert PaymentNotFound();
         payment.status = PaymentStatus.Failed;
         emit PaymentFailed(paymentId, reason);
     }

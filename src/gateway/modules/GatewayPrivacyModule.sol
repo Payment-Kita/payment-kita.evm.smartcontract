@@ -6,6 +6,7 @@ import "../../interfaces/IGatewayPrivacyModule.sol";
 
 contract GatewayPrivacyModule is Ownable, IGatewayPrivacyModule {
     error UnauthorizedGateway(address caller);
+    error InvalidPrivacyForwardData();
 
     mapping(address => bool) public authorizedGateway;
     event AuthorizedGatewayUpdated(address indexed gateway, bool allowed);
@@ -22,6 +23,15 @@ contract GatewayPrivacyModule is Ownable, IGatewayPrivacyModule {
         address token,
         uint256 amount,
         address caller
+    );
+    event PrivacyForwardExecutionRequested(
+        bytes32 indexed paymentId,
+        address indexed stealthReceiver,
+        address indexed finalReceiver,
+        address token,
+        uint256 amount,
+        address caller,
+        bool sameChain
     );
 
     constructor() Ownable(msg.sender) {}
@@ -50,6 +60,32 @@ contract GatewayPrivacyModule is Ownable, IGatewayPrivacyModule {
         address caller
     ) external override {
         if (!authorizedGateway[msg.sender]) revert UnauthorizedGateway(msg.sender);
+        emit PrivacyForwardRecorded(paymentId, stealthReceiver, finalReceiver, token, amount, caller);
+    }
+
+    function forwardFromStealth(
+        bytes32 paymentId,
+        address stealthReceiver,
+        address finalReceiver,
+        address token,
+        uint256 amount,
+        address caller,
+        bool sameChain
+    ) external override {
+        if (!authorizedGateway[msg.sender]) revert UnauthorizedGateway(msg.sender);
+        if (stealthReceiver == address(0) || finalReceiver == address(0) || stealthReceiver == finalReceiver) {
+            revert InvalidPrivacyForwardData();
+        }
+
+        emit PrivacyForwardExecutionRequested(
+            paymentId,
+            stealthReceiver,
+            finalReceiver,
+            token,
+            amount,
+            caller,
+            sameChain
+        );
         emit PrivacyForwardRecorded(paymentId, stealthReceiver, finalReceiver, token, amount, caller);
     }
 }

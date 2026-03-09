@@ -17,3 +17,29 @@ Registered ARBITRUM_USDC: 0xaf88d065e77c8cC2239327C5EDb3A432268e5831
 Registered ARBITRUM_USDT: 0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9
 Registered ARBITRUM_USDTO: 0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9
 Registered ARBITRUM_WETH: 0x82aF49447D8a07e3bd95BD0d56f35241523fBab1
+
+# PRIVACY READINESS MATRIX (PHASE 4)
+Last updated: 2026-03-09
+
+| Check | Expected | Current |
+|---|---|---|
+| Gateway privacy module wired | `gateway.privacyModule != 0x0` | Pending gate run |
+| Privacy module authorize gateway | `authorizedGateway(gateway)=true` | Pending gate run |
+| Vault authorize gateway/swapper | `authorizedSpenders(gateway|swapper)=true` | Pending gate run |
+| Swapper authorize gateway caller | `authorizedCallers(gateway)=true` | Pending gate run |
+| Adapter auth (gateway/vault/swapper) | CCIP/Hyperbridge/LZ receiver authorized | Pending gate run |
+| Privacy quote probe | `quotePaymentCost + previewApproval` (mode privacy) no revert | Pending gate run |
+| Privacy regression tests | Privacy suites pass | Pending gate run |
+
+## Gate Command (Template)
+```bash
+cd payment-kita.evm.smartcontract
+source .env
+
+PRIVACY_GATE_GATEWAY=<ARBITRUM_GATEWAY> \
+PRIVACY_GATE_VAULT=<ARBITRUM_VAULT> \
+PRIVACY_GATE_SWAPPER=<ARBITRUM_SWAPPER> \
+PRIVACY_GATE_PRIVACY_MODULE=<ARBITRUM_PRIVACY_MODULE> \
+BASE_RPC_URL=$ARBITRUM_RPC_URL \
+make validate-privacy-route-gate PRIVACY_GATE_SKIP_TESTS=1
+```

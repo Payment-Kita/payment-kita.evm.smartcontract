@@ -345,6 +345,41 @@ contract PaymentKitaGatewayV2Phase1Test is Test {
         assertEq(gateway.privacyForwardCompleted(pid), false);
     }
 
+    function testPrivacySameChainV2_AutoForwardTriggeredAtGateway() public {
+        IPaymentKitaGateway.PaymentRequestV2 memory req = _baseReq(address(bridgeToken), address(0), address(bridgeToken));
+        req.destChainIdBytes = bytes(string(abi.encodePacked("eip155:", vm.toString(block.chainid))));
+        req.mode = IPaymentKitaGateway.PaymentMode.PRIVACY;
+
+        IPaymentKitaGateway.PrivateRouting memory privacy;
+        privacy.intentId = keccak256("intent-samechain-auto-forward");
+        privacy.stealthReceiver = address(0xABCD);
+
+        vm.startPrank(user);
+        bridgeToken.approve(address(vault), type(uint256).max);
+        bytes32 pid = gateway.createPaymentPrivate(req, privacy);
+        vm.stopPrank();
+
+        assertEq(gateway.privacyForwardCompleted(pid), true);
+        assertEq(gateway.privacyForwardRetryCount(pid), 0);
+        assertEq(gateway.paymentSettledToken(pid), address(bridgeToken));
+        assertEq(gateway.paymentSettledAmount(pid), req.amountInSource);
+    }
+
+    function testPrivacyV2_RevertWhenStealthEqualsFinalReceiver() public {
+        IPaymentKitaGateway.PaymentRequestV2 memory req = _baseReq(address(bridgeToken), address(0), address(destToken));
+        req.mode = IPaymentKitaGateway.PaymentMode.PRIVACY;
+
+        IPaymentKitaGateway.PrivateRouting memory privacy;
+        privacy.intentId = keccak256("intent-stealth-equals-final");
+        privacy.stealthReceiver = receiver;
+
+        vm.startPrank(user);
+        bridgeToken.approve(address(vault), type(uint256).max);
+        vm.expectRevert(bytes("Stealth receiver must differ from final receiver"));
+        gateway.createPaymentPrivate(req, privacy);
+        vm.stopPrank();
+    }
+
     function testPrivacyForwardFinalize_AuthorizedAdapterMarksCompleted() public {
         IPaymentKitaGateway.PaymentRequestV2 memory req = _baseReq(address(bridgeToken), address(0), address(destToken));
         req.mode = IPaymentKitaGateway.PaymentMode.PRIVACY;

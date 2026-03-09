@@ -61,3 +61,36 @@ Registered BASE_CBETH: 0x2Ae3F1Ec7F1F5012CFEab0185bfc7aa3cf0DEc22
 Registered BASE_CBBTC: 0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf
 Registered BASE_WBTC: 0x0555E30da8f98308EdB960aa94C0Db47230d2B9c
 Registered BASE_IDRX: 0x18Bc5bcC660cf2B9cE3cd51a404aFe1a0cBD3C22
+
+# PRIVACY READINESS MATRIX (PHASE 4)
+Last updated: 2026-03-09
+
+| Check | Expected | Current |
+|---|---|---|
+| Gateway privacy module wired | `gateway.privacyModule != 0x0` | Configured (`0x36cC070A24149BebB614898B5449641a6c3C5294`) |
+| Privacy module authorize gateway | `authorizedGateway(gateway)=true` | Configured (from deploy flow) |
+| Vault authorize gateway/swapper | `authorizedSpenders(gateway|swapper)=true` | Configured (from deploy flow) |
+| Swapper authorize gateway caller | `authorizedCallers(gateway)=true` | Configured (from deploy flow) |
+| Adapter auth (gateway/vault/swapper) | CCIP/Hyperbridge/LZ receiver authorized | Configured (from deploy flow) |
+| Privacy quote probe | `quotePaymentCost + previewApproval` (mode privacy) no revert | Pending runtime gate |
+| Privacy regression tests | Privacy suites pass | Pending runtime gate |
+
+## Gate Command (Base)
+```bash
+cd payment-kita.evm.smartcontract
+source .env
+
+PRIVACY_GATE_GATEWAY=0xf0daa1a24556B68B4636FBE1c90dE326842A164C \
+PRIVACY_GATE_VAULT=0x67d0af7f163F45578679eDa4BDf9042E3E5FEc60 \
+PRIVACY_GATE_SWAPPER=0x8B6c7770D4B8AaD2d600e0cf5df3Eea5Bc0EB0fe \
+PRIVACY_GATE_PRIVACY_MODULE=0x36cC070A24149BebB614898B5449641a6c3C5294 \
+PRIVACY_GATE_ADAPTER_CCIP=0x46FAc7ac7D89d2daE0B647F31888AdD01cEed2bb \
+PRIVACY_GATE_ADAPTER_HYPERBRIDGE=0x2AD1ac009fAcc6528352d5ca23fd35F025C328f3 \
+PRIVACY_GATE_ADAPTER_LAYERZERO=0xc4c28aeeE5bb312970a7266461838565E1eEEc1a \
+PRIVACY_GATE_SOURCE_TOKEN=0x18Bc5bcC660cf2B9cE3cd51a404aFe1a0cBD3C22 \
+PRIVACY_GATE_DEST_TOKEN=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913 \
+PRIVACY_GATE_DEST_CAIP2=eip155:8453 \
+PRIVACY_GATE_RECEIVER=0x2Bda11F04b8F96D361D2DBB1bA8c36B744B4b42A \
+PRIVACY_GATE_AMOUNT=100000 \
+make validate-privacy-route-gate
+```

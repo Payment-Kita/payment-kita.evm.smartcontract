@@ -12,6 +12,10 @@ interface ITokenSwapperGatewayV2 {
     function setAuthorizedCaller(address caller, bool allowed) external;
 }
 
+interface IOwnableGatewayV2 {
+    function owner() external view returns (address);
+}
+
 interface IGatewayConfigSource {
     function swapper() external view returns (address);
     function enableSourceSideSwap() external view returns (bool);
@@ -24,31 +28,64 @@ interface IGatewayConfigSource {
 contract RedeployPaymentKitaGatewayV2 is Script {
     function run() external {
         uint256 pk = vm.envUint("PRIVATE_KEY");
+        address deployer = vm.addr(pk);
 
         // ----------------------------
-        // Base mainnet hardcoded values
-        // Source of truth: CHAIN_BASE.md
+        // Base mainnet defaults (can be overridden by env)
+        // Source of truth default: CHAIN_BASE.md
         // ----------------------------
-        address vault = 0xe3Be18b812b0645674cCa81f24dC5f7bD62911b7;
-        address router = 0x304185d7B5Eb9790Dc78805D2095612F7a43A291;
-        address tokenRegistry = 0x19cC8187e5DF6D482EF26443FC11C90123348C8e;
-        address feeRecipient = 0xE6A7d99011257AEc28Ad60EFED58A256c4d5Fea3;
+        address vault = vm.envOr("REDEPLOY_V2_VAULT", address(0x67d0af7f163F45578679eDa4BDf9042E3E5FEc60));
+        address router = vm.envOr("REDEPLOY_V2_ROUTER", address(0x1b91B56aD3aA6B35e5EAe18EE19A42574A545802));
+        address tokenRegistry = vm.envOr("REDEPLOY_V2_TOKEN_REGISTRY", address(0x140fbAA1e8BE387082aeb6088E4Ffe1bf3Ba4d4f));
+        address feeRecipient = vm.envOr(
+            "REDEPLOY_V2_FEE_RECIPIENT", vm.envOr("FEE_RECIPIENT_ADDRESS", address(0x2Bda11F04b8F96D361D2DBB1bA8c36B744B4b42A))
+        );
 
-        address oldGateway = 0xBaB8d97Fbdf6788BF40B01C096CFB2cC661ba642;
-        bool deauthorizeOldGateway = false;
-        bool copyConfigFromOldGateway = true;
+        address oldGateway = vm.envOr("REDEPLOY_V2_OLD_GATEWAY", address(0xf0daa1a24556B68B4636FBE1c90dE326842A164C));
+        bool deauthorizeOldGateway = vm.envOr("REDEPLOY_V2_DEAUTHORIZE_OLD_GATEWAY", false);
+        bool copyConfigFromOldGateway = vm.envOr("REDEPLOY_V2_COPY_CONFIG_FROM_OLD_GATEWAY", true);
 
-        address[] memory adapters = new address[](4);
-        // CHAIN_BASE.md active adapters on Base.
-        adapters[0] = 0x95C8aF513D4a898B125A3EE4a34979ef127Ef1c1; // CCIPReceiverAdapter
-        adapters[1] = 0x4864138d5Dc8a5bcFd4228D7F784D1F32859986f; // LayerZeroReceiverAdapter
-        adapters[2] = 0xf4348E2e6AF1860ea9Ab0F3854149582b608b5e2; // HyperbridgeReceiver
-        adapters[3] = 0x6709C0dF1a2a015B3C34d6C7a04a185fbAc4740a; // HyperbridgeSender
+        address[8] memory adapterCandidates;
+        // Active defaults from CHAIN_BASE.md
+        adapterCandidates[0] = vm.envOr("REDEPLOY_V2_ADAPTER_0", address(0x46FAc7ac7D89d2daE0B647F31888AdD01cEed2bb)); // CCIPReceiverAdapter
+        adapterCandidates[1] = vm.envOr("REDEPLOY_V2_ADAPTER_1", address(0xc4c28aeeE5bb312970a7266461838565E1eEEc1a)); // LayerZeroReceiverAdapter
+        adapterCandidates[2] = vm.envOr("REDEPLOY_V2_ADAPTER_2", address(0x2AD1ac009fAcc6528352d5ca23fd35F025C328f3)); // HyperbridgeReceiver
+        adapterCandidates[3] = vm.envOr("REDEPLOY_V2_ADAPTER_3", address(0xB9F0429D420571923EeC57E8b7025d063E361329)); // HyperbridgeSender
+        adapterCandidates[4] = vm.envOr("REDEPLOY_V2_ADAPTER_4", address(0));
+        adapterCandidates[5] = vm.envOr("REDEPLOY_V2_ADAPTER_5", address(0));
+        adapterCandidates[6] = vm.envOr("REDEPLOY_V2_ADAPTER_6", address(0));
+        adapterCandidates[7] = vm.envOr("REDEPLOY_V2_ADAPTER_7", address(0));
 
-        string[] memory defaultRouteDests = new string[](1);
-        uint8[] memory defaultRouteBridgeTypes = new uint8[](1);
-        defaultRouteDests[0] = "eip155:137";
-        defaultRouteBridgeTypes[0] = 0;
+        uint256 adapterCount;
+        for (uint256 i = 0; i < adapterCandidates.length; i++) {
+            if (adapterCandidates[i] != address(0)) {
+                adapterCount++;
+            }
+        }
+        address[] memory adapters = new address[](adapterCount);
+        uint256 adapterWriteIdx;
+        for (uint256 i = 0; i < adapterCandidates.length; i++) {
+            if (adapterCandidates[i] != address(0)) {
+                adapters[adapterWriteIdx] = adapterCandidates[i];
+                adapterWriteIdx++;
+            }
+        }
+
+        string memory defaultRouteDest = vm.envOr("REDEPLOY_V2_DEFAULT_DEST_CAIP2", string("eip155:137"));
+        uint8 defaultRouteBridgeType = uint8(vm.envOr("REDEPLOY_V2_DEFAULT_BRIDGE_TYPE", uint256(0)));
+
+        if (vault == address(0) || router == address(0) || tokenRegistry == address(0) || feeRecipient == address(0)) {
+            revert("RedeployV2: zero core address");
+        }
+
+        // Preflight guard: avoid broadcasting when signer cannot configure vault.
+        address vaultOwner = IOwnableGatewayV2(vault).owner();
+        if (vaultOwner != deployer) {
+            console.log("Signer:", deployer);
+            console.log("Vault:", vault);
+            console.log("Vault owner:", vaultOwner);
+            revert("RedeployV2: signer is not vault owner");
+        }
 
         vm.startBroadcast(pk);
 
@@ -81,9 +118,9 @@ contract RedeployPaymentKitaGatewayV2 is Script {
             gatewayV2.setAuthorizedAdapter(adapter, true);
         }
 
-        // Optional: set default bridge type for known routes.
-        for (uint256 i = 0; i < defaultRouteDests.length; i++) {
-            gatewayV2.setDefaultBridgeType(defaultRouteDests[i], defaultRouteBridgeTypes[i]);
+        // Optional: set default bridge type for known route.
+        if (bytes(defaultRouteDest).length > 0) {
+            gatewayV2.setDefaultBridgeType(defaultRouteDest, defaultRouteBridgeType);
         }
 
         if (deauthorizeOldGateway && oldGateway != address(0)) {
@@ -105,6 +142,9 @@ contract RedeployPaymentKitaGatewayV2 is Script {
         console.log("Router:", router);
         console.log("TokenRegistry:", tokenRegistry);
         console.log("FeeRecipient:", feeRecipient);
+        if (bytes(defaultRouteDest).length > 0) {
+            console.log("DefaultRouteDest:", defaultRouteDest);
+        }
         if (oldGateway != address(0)) {
             console.log("OldGateway:", oldGateway);
             console.log("DeauthorizeOldGateway:", deauthorizeOldGateway);

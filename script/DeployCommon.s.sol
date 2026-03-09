@@ -97,6 +97,23 @@ abstract contract DeployCommon is Script {
         return deploySystem(config, noRoute);
     }
 
+    function assertPrivacyCoreWiring(
+        PaymentKitaGateway gateway_,
+        PaymentKitaVault vault_,
+        TokenSwapper swapper_,
+        GatewayPrivacyModule privacy_
+    ) internal view {
+        require(gateway_.validatorModule() != address(0), "DEPLOYMENT ERROR: validator module not wired");
+        require(gateway_.quoteModule() != address(0), "DEPLOYMENT ERROR: quote module not wired");
+        require(gateway_.executionModule() != address(0), "DEPLOYMENT ERROR: execution module not wired");
+        require(gateway_.privacyModule() == address(privacy_), "DEPLOYMENT ERROR: privacy module mismatch");
+        require(gateway_.feePolicyManager() != address(0), "DEPLOYMENT ERROR: fee policy manager missing");
+        require(privacy_.authorizedGateway(address(gateway_)), "DEPLOYMENT ERROR: privacy module gateway auth missing");
+        require(vault_.authorizedSpenders(address(gateway_)), "DEPLOYMENT ERROR: vault missing gateway auth");
+        require(vault_.authorizedSpenders(address(swapper_)), "DEPLOYMENT ERROR: vault missing swapper auth");
+        require(swapper_.authorizedCallers(address(gateway_)), "DEPLOYMENT ERROR: swapper missing gateway caller auth");
+    }
+
     function strictTokenRegistration() internal returns (bool) {
         return vm.envOr("STRICT_TOKEN_REGISTRATION", true);
     }
@@ -298,6 +315,10 @@ abstract contract DeployCommon is Script {
         vault.setAuthorizedSpender(address(swapper_), true);
 
         console.log("Vault authorizations set.");
+
+        // 6a. Fail-fast core privacy wiring checks
+        assertPrivacyCoreWiring(gateway_, vault, swapper_, privacy);
+        console.log("Privacy core wiring checks: PASS");
 
         // 7. Final Configuration
         // Init: Register the bridge token as supported

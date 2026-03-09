@@ -17,3 +17,29 @@ Registered POLYGON_USDC: 0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359
 Registered POLYGON_USDT: 0xc2132D05D31c914a87C6611C10748AEb04B58e8F
 Registered POLYGON_WETH: 0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619
 Registered POLYGON_DAI: 0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063
+
+# PRIVACY READINESS MATRIX (PHASE 4)
+Last updated: 2026-03-09
+
+| Check | Expected | Current |
+|---|---|---|
+| Gateway privacy module wired | `gateway.privacyModule != 0x0` | Pending gate run |
+| Privacy module authorize gateway | `authorizedGateway(gateway)=true` | Pending gate run |
+| Vault authorize gateway/swapper | `authorizedSpenders(gateway|swapper)=true` | Pending gate run |
+| Swapper authorize gateway caller | `authorizedCallers(gateway)=true` | Pending gate run |
+| Adapter auth (gateway/vault/swapper) | CCIP/Hyperbridge/LZ receiver authorized | Pending gate run |
+| Privacy quote probe | `quotePaymentCost + previewApproval` (mode privacy) no revert | Pending gate run |
+| Privacy regression tests | Privacy suites pass | Pending gate run |
+
+## Gate Command (Template)
+```bash
+cd payment-kita.evm.smartcontract
+source .env
+
+PRIVACY_GATE_GATEWAY=<POLYGON_GATEWAY> \
+PRIVACY_GATE_VAULT=<POLYGON_VAULT> \
+PRIVACY_GATE_SWAPPER=<POLYGON_SWAPPER> \
+PRIVACY_GATE_PRIVACY_MODULE=<POLYGON_PRIVACY_MODULE> \
+BASE_RPC_URL=$POLYGON_RPC_URL \
+make validate-privacy-route-gate PRIVACY_GATE_SKIP_TESTS=1
+```

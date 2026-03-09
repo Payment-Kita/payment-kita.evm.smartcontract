@@ -19,12 +19,21 @@ contract DeployBSC is DeployCommon {
         });
 
         console.log("Deploying to BSC...");
-        (, , TokenRegistry registry, TokenSwapper swapper) = deploySystem(config);
+        (PaymentKitaGateway gateway, , TokenRegistry registry, TokenSwapper swapper) = deploySystem(config);
 
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         vm.startBroadcast(deployerPrivateKey);
 
         bool strict = strictTokenRegistration();
+        address v3Router = vm.envOr("BSC_V3_ROUTER", address(0));
+        require(v3Router != address(0), "DEPLOYMENT ERROR: BSC_V3_ROUTER must be set");
+        swapper.setV3Router(v3Router);
+        require(swapper.swapRouterV3() == v3Router, "DEPLOYMENT ERROR: BSC V3 router mismatch");
+        console.log("Configured V3 router:", v3Router);
+        require(gateway.privacyModule() != address(0), "DEPLOYMENT ERROR: privacy module missing");
+        require(GatewayPrivacyModule(gateway.privacyModule()).authorizedGateway(address(gateway)), "DEPLOYMENT ERROR: privacy auth missing");
+        require(swapper.authorizedCallers(address(gateway)), "DEPLOYMENT ERROR: swapper gateway auth missing");
+        require(registry.isTokenSupported(config.bridgeToken), "DEPLOYMENT ERROR: bridge token unsupported");
 
         // 1. Register tokens + decimals
         address usdc = config.bridgeToken;

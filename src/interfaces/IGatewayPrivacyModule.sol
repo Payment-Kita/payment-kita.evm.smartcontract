@@ -17,4 +17,14 @@ interface IGatewayPrivacyModule {
         uint256 amount,
         address caller
     ) external;
+
+    function forwardFromStealth(
+        bytes32 paymentId,
+        address stealthReceiver,
+        address finalReceiver,
+        address token,
+        uint256 amount,
+        address caller,
+        bool sameChain
+    ) external;
 }
