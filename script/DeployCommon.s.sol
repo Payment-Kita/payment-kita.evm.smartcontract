@@ -20,6 +20,7 @@ import "../src/gateway/modules/GatewayPrivacyModule.sol";
 import "../src/gateway/fee/FeePolicyManager.sol";
 import "../src/gateway/fee/strategies/FeeStrategyDefaultV1.sol";
 import "../src/gateway/fee/strategies/FeeStrategyMarketAdaptiveV1.sol";
+import "../src/privacy/StealthEscrowFactory.sol";
 
 interface IHyperbridgeCfgCommon {
     function setStateMachineId(string calldata chainId, bytes calldata stateMachineId) external;
@@ -193,6 +194,19 @@ abstract contract DeployCommon is Script {
         GatewayExecutionModule executor = new GatewayExecutionModule();
         GatewayPrivacyModule privacy = new GatewayPrivacyModule();
 
+        address stealthEscrowFactoryAddr = vm.envOr("GWV2_STEALTH_ESCROW_FACTORY", address(0));
+        if (stealthEscrowFactoryAddr == address(0)) {
+            StealthEscrowFactory stealthFactory = new StealthEscrowFactory();
+            stealthEscrowFactoryAddr = address(stealthFactory);
+        } else {
+            require(
+                stealthEscrowFactoryAddr.code.length > 0,
+                "DEPLOYMENT ERROR: configured stealth escrow factory has no code"
+            );
+        }
+
+        address privacyForwardExecutor = vm.envOr("GWV2_PRIVACY_FORWARD_EXECUTOR", address(privacy));
+
         FeeStrategyDefaultV1 defaultStrategy = new FeeStrategyDefaultV1(address(registry_));
         FeePolicyManager feeManager = new FeePolicyManager(address(defaultStrategy));
 
@@ -220,6 +234,8 @@ abstract contract DeployCommon is Script {
         console.log("- quote:", address(quoter));
         console.log("- execution:", address(executor));
         console.log("- privacy:", address(privacy));
+        console.log("StealthEscrowFactory:", stealthEscrowFactoryAddr);
+        console.log("PrivacyForwardExecutor:", privacyForwardExecutor);
         console.log("FeePolicyManager:", address(feeManager));
         console.log("Default fee strategy:", address(defaultStrategy));
         if (adaptiveAddr != address(0)) {
@@ -242,6 +258,14 @@ abstract contract DeployCommon is Script {
         // 5. Authorize Gateway on Swapper
         swapper_.setAuthorizedCaller(address(gateway_), true);
         console.log("Gateway authorized on Swapper.");
+
+        bool authorizeForwardExecutor = vm.envOr("GWV2_AUTHORIZE_FORWARD_EXECUTOR", false);
+        if (authorizeForwardExecutor && privacyForwardExecutor != address(0)) {
+            gateway_.setAuthorizedAdapter(privacyForwardExecutor, true);
+            vault.setAuthorizedSpender(privacyForwardExecutor, true);
+            swapper_.setAuthorizedCaller(privacyForwardExecutor, true);
+            console.log("Forward executor authorization applied.");
+        }
 
         // 6. Deploy Adapters (Only if addresses provided)
         address ccipSenderAddr = address(0);

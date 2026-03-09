@@ -9,6 +9,7 @@
 	rotate-hb-dry rotate-hb-broadcast rotate-hb-verify rotate-hb \
 	redeploy-hb-sender-dry redeploy-hb-sender-broadcast redeploy-hb-sender-verify redeploy-hb-sender \
 	redeploy-gateway-v2-dry redeploy-gateway-v2 \
+	redeploy-gateway-v2-privacy-patch-dry redeploy-gateway-v2-privacy-patch \
 	redeploy-router-gateway-v2-dry redeploy-router-gateway-v2 \
 	verify-lz-base \
 	lz-config-dry lz-config \
@@ -21,6 +22,7 @@
 	set-fee-strategy-dry set-fee-strategy-broadcast validate-fee-strategy-dry \
 	validate-gateway-selector-gate \
 	validate-bytecode-gate validate-security-regression validate-phase7-gate validate-privacy-route-gate privacy-regression \
+	privacy-v2-wire privacy-v2-validate privacy-v2-smoke \
 	deploy-gateway-modular-dry deploy-gateway-modular-broadcast \
 	deploy-gateway-modular-v2-dry deploy-gateway-modular-v2-broadcast deploy-gateway-modular-v2-verify \
 	wire-gateway-modules-dry wire-gateway-modules-broadcast \
@@ -71,6 +73,8 @@ help:
 	@echo "Gateway V2 redeploy (keep router/adapters):"
 	@echo "  make redeploy-gateway-v2-dry"
 	@echo "  make redeploy-gateway-v2"
+	@echo "  make redeploy-gateway-v2-privacy-patch-dry"
+	@echo "  make redeploy-gateway-v2-privacy-patch"
 	@echo ""
 	@echo "Router+GatewayV2 rewire (deploy router baru + rotate HB sender):"
 	@echo "  make redeploy-router-gateway-v2-dry"
@@ -120,6 +124,9 @@ help:
 	@echo "  make validate-phase7-gate         - run both gates"
 	@echo "  make validate-privacy-route-gate  - post-deploy privacy wiring + quote probe gate"
 	@echo "  make privacy-regression           - run privacy path regression suites"
+	@echo "  make privacy-v2-wire              - one-shot wire gateway modules + fee manager + privacy auth"
+	@echo "  make privacy-v2-validate          - run privacy readiness gate + regression suites"
+	@echo "  make privacy-v2-smoke             - alias to privacy-v2-validate"
 	@echo ""
 	@echo "Gateway modular rollout (Phase 6):"
 	@echo "  make deploy-gateway-modular-dry"
@@ -326,6 +333,26 @@ redeploy-gateway-v2:
 	@test -n "$(BASE_RPC_URL)" || (echo "Missing BASE_RPC_URL" && exit 1)
 	@test -n "$(BASESCAN_API_KEY)" || (echo "Missing BASESCAN_API_KEY" && exit 1)
 	@forge script script/RedeployPaymentKitaGatewayV2.s.sol:RedeployPaymentKitaGatewayV2 \
+		--rpc-url $(BASE_RPC_URL) \
+		--private-key $(PRIVATE_KEY) \
+		--broadcast \
+		--verify \
+		--etherscan-api-key $(BASESCAN_API_KEY) \
+		$(VERBOSITY) $(SLOW)
+
+redeploy-gateway-v2-privacy-patch-dry:
+	@test -n "$(PRIVATE_KEY)" || (echo "Missing PRIVATE_KEY" && exit 1)
+	@test -n "$(BASE_RPC_URL)" || (echo "Missing BASE_RPC_URL" && exit 1)
+	@forge script script/RedeployPaymentKitaGatewayV2PrivacyPatch.s.sol:RedeployPaymentKitaGatewayV2PrivacyPatch \
+		--rpc-url $(BASE_RPC_URL) \
+		--private-key $(PRIVATE_KEY) \
+		$(VERBOSITY)
+
+redeploy-gateway-v2-privacy-patch:
+	@test -n "$(PRIVATE_KEY)" || (echo "Missing PRIVATE_KEY" && exit 1)
+	@test -n "$(BASE_RPC_URL)" || (echo "Missing BASE_RPC_URL" && exit 1)
+	@test -n "$(BASESCAN_API_KEY)" || (echo "Missing BASESCAN_API_KEY" && exit 1)
+	@forge script script/RedeployPaymentKitaGatewayV2PrivacyPatch.s.sol:RedeployPaymentKitaGatewayV2PrivacyPatch \
 		--rpc-url $(BASE_RPC_URL) \
 		--private-key $(PRIVATE_KEY) \
 		--broadcast \
@@ -564,6 +591,15 @@ validate-privacy-route-gate:
 	else \
 		echo "Skipping privacy regression tests because PRIVACY_GATE_SKIP_TESTS=1"; \
 	fi
+
+privacy-v2-wire:
+	@$(MAKE) wire-gateway-modules-broadcast
+
+privacy-v2-validate:
+	@$(MAKE) validate-privacy-route-gate
+
+privacy-v2-smoke:
+	@$(MAKE) privacy-v2-validate
 
 privacy-regression:
 	@forge test --offline --match-contract PaymentKitaGatewayV2Phase1Test --match-test Privacy

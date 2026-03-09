@@ -4,6 +4,10 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "../../interfaces/IGatewayPrivacyModule.sol";
 
+interface IStealthEscrowForwarder {
+    function forwardToken(address token, address receiver, uint256 amount) external;
+}
+
 contract GatewayPrivacyModule is Ownable, IGatewayPrivacyModule {
     error UnauthorizedGateway(address caller);
     error InvalidPrivacyForwardData();
@@ -73,7 +77,14 @@ contract GatewayPrivacyModule is Ownable, IGatewayPrivacyModule {
         bool sameChain
     ) external override {
         if (!authorizedGateway[msg.sender]) revert UnauthorizedGateway(msg.sender);
-        if (stealthReceiver == address(0) || finalReceiver == address(0) || stealthReceiver == finalReceiver) {
+        if (
+            stealthReceiver == address(0) ||
+            finalReceiver == address(0) ||
+            stealthReceiver == finalReceiver ||
+            token == address(0) ||
+            amount == 0 ||
+            stealthReceiver.code.length == 0
+        ) {
             revert InvalidPrivacyForwardData();
         }
 
@@ -86,6 +97,9 @@ contract GatewayPrivacyModule is Ownable, IGatewayPrivacyModule {
             caller,
             sameChain
         );
+
+        IStealthEscrowForwarder(stealthReceiver).forwardToken(token, finalReceiver, amount);
+
         emit PrivacyForwardRecorded(paymentId, stealthReceiver, finalReceiver, token, amount, caller);
     }
 }

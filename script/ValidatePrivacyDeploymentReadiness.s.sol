@@ -12,6 +12,8 @@ interface IPrivacyGateGateway is IPaymentKitaGateway {
     function privacyModule() external view returns (address);
     function feePolicyManager() external view returns (address);
     function isAuthorizedAdapter(address adapter) external view returns (bool);
+    function privacyForwardCompleted(bytes32 paymentId) external view returns (bool);
+    function privacyForwardRetryCount(bytes32 paymentId) external view returns (uint8);
 }
 
 interface IPrivacyGateVault {
@@ -24,6 +26,15 @@ interface IPrivacyGateSwapper {
 
 interface IPrivacyGateModule {
     function authorizedGateway(address gateway) external view returns (bool);
+}
+
+interface IPrivacyEscrowFactoryGate {
+    function predictEscrow(bytes32 salt, address owner, address forwarder) external view returns (address);
+}
+
+interface IPrivacyEscrowGate {
+    function owner() external view returns (address);
+    function forwarder() external view returns (address);
 }
 
 contract ValidatePrivacyDeploymentReadiness is Script {
@@ -42,6 +53,9 @@ contract ValidatePrivacyDeploymentReadiness is Script {
         string memory destCaip2 = vm.envOr("PRIVACY_GATE_DEST_CAIP2", string(""));
         address receiver = vm.envOr("PRIVACY_GATE_RECEIVER", address(0));
         uint256 amount = vm.envOr("PRIVACY_GATE_AMOUNT", uint256(0));
+        address escrowFactory = vm.envOr("PRIVACY_GATE_ESCROW_FACTORY", address(0));
+        address expectedStealthEscrow = vm.envOr("PRIVACY_GATE_EXPECTED_STEALTH_ESCROW", address(0));
+        uint256 escrowSaltRaw = vm.envOr("PRIVACY_GATE_ESCROW_SALT_UINT", uint256(0));
 
         IPrivacyGateGateway gateway = IPrivacyGateGateway(gatewayAddr);
         IPrivacyGateVault vault = IPrivacyGateVault(vaultAddr);
@@ -66,10 +80,35 @@ contract ValidatePrivacyDeploymentReadiness is Script {
         require(vault.authorizedSpenders(gatewayAddr), "PRIVACY GATE FAIL: vault missing gateway authorization");
         require(vault.authorizedSpenders(swapperAddr), "PRIVACY GATE FAIL: vault missing swapper authorization");
         require(swapper.authorizedCallers(gatewayAddr), "PRIVACY GATE FAIL: swapper missing gateway authorization");
+        require(!gateway.privacyForwardCompleted(bytes32(0)), "PRIVACY GATE FAIL: privacy forward probe should be false");
+        require(gateway.privacyForwardRetryCount(bytes32(0)) == 0, "PRIVACY GATE FAIL: privacy retry probe should be zero");
 
         _assertAdapter(gateway, vault, swapper, ccipReceiver, "CCIP receiver");
         _assertAdapter(gateway, vault, swapper, hyperbridgeReceiver, "Hyperbridge receiver");
         _assertAdapter(gateway, vault, swapper, layerzeroReceiver, "LayerZero receiver");
+
+        address forwardExecutor = vm.envOr("PRIVACY_GATE_FORWARD_EXECUTOR", privacy);
+        address escrowOwner = vm.envOr("PRIVACY_GATE_ESCROW_OWNER", receiver == address(0) ? gatewayAddr : receiver);
+        if (escrowFactory != address(0)) {
+            require(escrowFactory.code.length > 0, "PRIVACY GATE FAIL: escrow factory has no code");
+            bytes32 salt =
+                escrowSaltRaw == 0
+                    ? keccak256(abi.encodePacked("privacy-v2-gate", gatewayAddr, escrowOwner, forwardExecutor))
+                    : bytes32(escrowSaltRaw);
+            address predicted = IPrivacyEscrowFactoryGate(escrowFactory).predictEscrow(salt, escrowOwner, forwardExecutor);
+            require(predicted != address(0), "PRIVACY GATE FAIL: invalid escrow prediction");
+
+            if (expectedStealthEscrow != address(0)) {
+                require(predicted == expectedStealthEscrow, "PRIVACY GATE FAIL: predicted escrow mismatch");
+                require(expectedStealthEscrow.code.length > 0, "PRIVACY GATE FAIL: expected escrow not deployed");
+                require(IPrivacyEscrowGate(expectedStealthEscrow).forwarder() == forwardExecutor, "PRIVACY GATE FAIL: escrow forwarder mismatch");
+            }
+
+            console.log("[PASS] escrow factory probe");
+            console.log("escrowFactory:", escrowFactory);
+            console.log("escrowForwardExecutor:", forwardExecutor);
+            console.log("escrowPredicted:", predicted);
+        }
 
         bool runQuoteProbe =
             sourceToken != address(0) &&
@@ -103,15 +142,21 @@ contract ValidatePrivacyDeploymentReadiness is Script {
             (address approvalToken, uint256 approvalAmount, uint256 requiredNativeFee) = gateway.previewApproval(req);
 
             console.log("[PASS] privacy quote probe");
-            console.log("platformFee:", platformFee);
-            console.log("bridgeFeeNative:", bridgeFeeNative);
-            console.log("totalSourceTokenRequired:", totalSourceTokenRequired);
-            console.log("bridgeType:", bridgeType);
+            console.log("platformFee");
+            console.log(platformFee);
+            console.log("bridgeFeeNative");
+            console.log(bridgeFeeNative);
+            console.log("totalSourceTokenRequired");
+            console.log(totalSourceTokenRequired);
+            console.log("bridgeType");
+            console.log(uint256(bridgeType));
             console.log("bridgeQuoteOk:", bridgeQuoteOk);
             console.log("bridgeQuoteReason:", bridgeQuoteReason);
             console.log("approvalToken:", approvalToken);
-            console.log("approvalAmount:", approvalAmount);
-            console.log("requiredNativeFee:", requiredNativeFee);
+            console.log("approvalAmount");
+            console.log(approvalAmount);
+            console.log("requiredNativeFee");
+            console.log(requiredNativeFee);
         } else {
             console.log("[SKIP] privacy quote probe (set PRIVACY_GATE_SOURCE_TOKEN, PRIVACY_GATE_DEST_TOKEN, PRIVACY_GATE_DEST_CAIP2, PRIVACY_GATE_RECEIVER, PRIVACY_GATE_AMOUNT)");
         }
@@ -121,6 +166,7 @@ contract ValidatePrivacyDeploymentReadiness is Script {
         console.log("vault:", vaultAddr);
         console.log("swapper:", swapperAddr);
         console.log("privacyModule:", privacy);
+        console.log("forwardExecutor:", forwardExecutor);
     }
 
     function _assertAdapter(

@@ -23,6 +23,16 @@ interface IGatewayConfigSource {
         external
         view
         returns (bool enabled, uint256 perByteRate, uint256 overheadBytes, uint256 minFee, uint256 maxFee);
+
+    function validatorModule() external view returns (address);
+    function quoteModule() external view returns (address);
+    function executionModule() external view returns (address);
+    function privacyModule() external view returns (address);
+    function feePolicyManager() external view returns (address);
+}
+
+interface IGatewayPrivacyAdmin {
+    function setAuthorizedGateway(address gateway, bool allowed) external;
 }
 
 contract RedeployPaymentKitaGatewayV2 is Script {
@@ -44,6 +54,14 @@ contract RedeployPaymentKitaGatewayV2 is Script {
         address oldGateway = vm.envOr("REDEPLOY_V2_OLD_GATEWAY", address(0xf0daa1a24556B68B4636FBE1c90dE326842A164C));
         bool deauthorizeOldGateway = vm.envOr("REDEPLOY_V2_DEAUTHORIZE_OLD_GATEWAY", false);
         bool copyConfigFromOldGateway = vm.envOr("REDEPLOY_V2_COPY_CONFIG_FROM_OLD_GATEWAY", true);
+        bool requireRuntimeWiring = vm.envOr("REDEPLOY_V2_REQUIRE_RUNTIME_WIRING", true);
+
+        // Optional explicit module/manager overrides.
+        address explicitValidatorModule = vm.envOr("REDEPLOY_V2_VALIDATOR_MODULE", address(0));
+        address explicitQuoteModule = vm.envOr("REDEPLOY_V2_QUOTE_MODULE", address(0));
+        address explicitExecutionModule = vm.envOr("REDEPLOY_V2_EXECUTION_MODULE", address(0));
+        address explicitPrivacyModule = vm.envOr("REDEPLOY_V2_PRIVACY_MODULE", address(0));
+        address explicitFeePolicyManager = vm.envOr("REDEPLOY_V2_FEE_POLICY_MANAGER", address(0));
 
         address[8] memory adapterCandidates;
         // Active defaults from CHAIN_BASE.md
@@ -99,6 +117,19 @@ contract RedeployPaymentKitaGatewayV2 is Script {
             _copyConfig(gatewayV2, oldGateway);
         }
 
+        _wireRuntimeConfig(
+            gatewayV2,
+            oldGateway,
+            explicitValidatorModule,
+            explicitQuoteModule,
+            explicitExecutionModule,
+            explicitPrivacyModule,
+            explicitFeePolicyManager,
+            requireRuntimeWiring
+        );
+
+        _authorizePrivacyGateway(gatewayV2, requireRuntimeWiring);
+
         // Re-wire swapper auth for new gateway (if swapper already configured/copied).
         address configuredSwapper = address(gatewayV2.swapper());
         if (configuredSwapper != address(0)) {
@@ -142,6 +173,11 @@ contract RedeployPaymentKitaGatewayV2 is Script {
         console.log("Router:", router);
         console.log("TokenRegistry:", tokenRegistry);
         console.log("FeeRecipient:", feeRecipient);
+        console.log("RuntimeValidatorModule:", gatewayV2.validatorModule());
+        console.log("RuntimeQuoteModule:", gatewayV2.quoteModule());
+        console.log("RuntimeExecutionModule:", gatewayV2.executionModule());
+        console.log("RuntimePrivacyModule:", gatewayV2.privacyModule());
+        console.log("RuntimeFeePolicyManager:", gatewayV2.feePolicyManager());
         if (bytes(defaultRouteDest).length > 0) {
             console.log("DefaultRouteDest:", defaultRouteDest);
         }
@@ -149,6 +185,25 @@ contract RedeployPaymentKitaGatewayV2 is Script {
             console.log("OldGateway:", oldGateway);
             console.log("DeauthorizeOldGateway:", deauthorizeOldGateway);
             console.log("CopyConfigFromOldGateway:", copyConfigFromOldGateway);
+        }
+    }
+
+    function _authorizePrivacyGateway(PaymentKitaGateway gatewayV2, bool requireRuntimeWiring) internal {
+        address privacy = gatewayV2.privacyModule();
+        if (privacy == address(0)) {
+            if (requireRuntimeWiring) {
+                revert("RedeployV2: privacy module missing");
+            }
+            return;
+        }
+
+        try IGatewayPrivacyAdmin(privacy).setAuthorizedGateway(address(gatewayV2), true) {
+            // no-op
+        } catch {
+            if (requireRuntimeWiring) {
+                revert("RedeployV2: privacy auth failed");
+            }
+            console.log("Privacy module auth for gateway failed, skip");
         }
     }
 
@@ -169,5 +224,63 @@ contract RedeployPaymentKitaGatewayV2 is Script {
         } catch {
             console.log("platformFeePolicy() unavailable on old gateway, skip copy");
         }
+    }
+
+    function _wireRuntimeConfig(
+        PaymentKitaGateway gatewayV2,
+        address oldGateway,
+        address validatorModuleAddr,
+        address quoteModuleAddr,
+        address executionModuleAddr,
+        address privacyModuleAddr,
+        address feePolicyManagerAddr,
+        bool requireRuntimeWiring
+    ) internal {
+        if (validatorModuleAddr == address(0) && oldGateway != address(0)) {
+            (, validatorModuleAddr) = _tryReadAddress(oldGateway, IGatewayConfigSource.validatorModule.selector);
+        }
+        if (quoteModuleAddr == address(0) && oldGateway != address(0)) {
+            (, quoteModuleAddr) = _tryReadAddress(oldGateway, IGatewayConfigSource.quoteModule.selector);
+        }
+        if (executionModuleAddr == address(0) && oldGateway != address(0)) {
+            (, executionModuleAddr) = _tryReadAddress(oldGateway, IGatewayConfigSource.executionModule.selector);
+        }
+        if (privacyModuleAddr == address(0) && oldGateway != address(0)) {
+            (, privacyModuleAddr) = _tryReadAddress(oldGateway, IGatewayConfigSource.privacyModule.selector);
+        }
+        if (feePolicyManagerAddr == address(0) && oldGateway != address(0)) {
+            (, feePolicyManagerAddr) = _tryReadAddress(oldGateway, IGatewayConfigSource.feePolicyManager.selector);
+        }
+
+        bool modulesReady =
+            validatorModuleAddr != address(0) &&
+            quoteModuleAddr != address(0) &&
+            executionModuleAddr != address(0) &&
+            privacyModuleAddr != address(0);
+
+        if (modulesReady) {
+            gatewayV2.setGatewayModules(validatorModuleAddr, quoteModuleAddr, executionModuleAddr, privacyModuleAddr);
+        } else if (requireRuntimeWiring) {
+            revert("RedeployV2: missing gateway modules");
+        } else {
+            console.log("Gateway modules missing, skip wiring");
+        }
+
+        if (feePolicyManagerAddr != address(0)) {
+            gatewayV2.setFeePolicyManager(feePolicyManagerAddr);
+        } else if (requireRuntimeWiring) {
+            revert("RedeployV2: missing fee manager");
+        } else {
+            console.log("FeePolicyManager missing, skip wiring");
+        }
+    }
+
+    function _tryReadAddress(address target, bytes4 selector) internal view returns (bool ok, address value) {
+        (bool success, bytes memory data) = target.staticcall(abi.encodeWithSelector(selector));
+        if (!success || data.length < 32) {
+            return (false, address(0));
+        }
+        value = abi.decode(data, (address));
+        return (true, value);
     }
 }

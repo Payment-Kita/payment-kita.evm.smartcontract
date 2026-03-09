@@ -86,6 +86,8 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
     error RetryLimitReached();
     error PaymentNotFailed();
     error NotAuthorizedAdapter();
+    error PrivacyRecoveryUnauthorized();
+    error PrivacyRetryNotAvailable();
 
     // ============ State Variables ============
 
@@ -211,6 +213,25 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
         uint8 retryCount,
         string reason,
         bool sameChain,
+        address actor
+    );
+    event PrivacyForwardRetryRequested(
+        bytes32 indexed paymentId,
+        uint8 retryCount,
+        address actor
+    );
+    event PrivacyEscrowClaimed(
+        bytes32 indexed paymentId,
+        address indexed finalReceiver,
+        address indexed token,
+        uint256 amount,
+        address actor
+    );
+    event PrivacyEscrowRefunded(
+        bytes32 indexed paymentId,
+        address indexed sender,
+        address indexed token,
+        uint256 amount,
         address actor
     );
     event GatewayModulesUpdated(
@@ -529,7 +550,7 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
 
         bool sameChain = keccak256(req.destChainIdBytes) == keccak256(bytes(currentChainCaip2));
         if (sameChain) {
-            _tryFinalizeSameChainPrivacyForward(paymentId, msg.sender);
+            _finalizeSameChainPrivacyForwardAtomic(paymentId);
         }
     }
 
@@ -644,17 +665,7 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
         if (privacyModule == address(0)) revert PrivacyModuleUnavailable();
 
         bool sameChain = _isSameChainPayment(paymentId);
-        emit PrivacyForwardRequested(paymentId, stealthReceiver, finalReceiver, token, amount, sameChain, msg.sender);
-
-        IGatewayPrivacyModule(privacyModule).forwardFromStealth(
-            paymentId,
-            stealthReceiver,
-            finalReceiver,
-            token,
-            amount,
-            msg.sender,
-            sameChain
-        );
+        _forwardFromStealth(paymentId, stealthReceiver, finalReceiver, token, amount, sameChain, msg.sender);
 
         privacyForwardCompleted[paymentId] = true;
         paymentSettledToken[paymentId] = token;
@@ -668,6 +679,77 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
         if (privacyForwardCompleted[paymentId]) revert PrivacyForwardAlreadyCompleted();
         if (privacyStealthByPayment[paymentId] == address(0)) revert PrivacyPaymentNotFound();
         _recordPrivacyForwardFailure(paymentId, reason, _isSameChainPayment(paymentId), msg.sender);
+    }
+
+    function retryPrivacyForward(bytes32 paymentId) external override nonReentrant whenNotPaused {
+        if (!_canActOnPrivacyRecovery(paymentId, msg.sender)) revert PrivacyRecoveryUnauthorized();
+        if (privacyForwardCompleted[paymentId]) revert PrivacyForwardAlreadyCompleted();
+        if (privacyStealthByPayment[paymentId] == address(0)) revert PrivacyPaymentNotFound();
+        if (privacyForwardRetryCount[paymentId] == 0) revert PrivacyRetryNotAvailable();
+
+        address token = paymentSettledToken[paymentId];
+        uint256 amount = paymentSettledAmount[paymentId];
+        if (token == address(0)) revert InvalidForwardToken();
+        if (amount == 0) revert InvalidForwardAmount();
+
+        emit PrivacyForwardRetryRequested(paymentId, privacyForwardRetryCount[paymentId], msg.sender);
+
+        try this.finalizePrivacyForward(paymentId, token, amount) {
+            return;
+        } catch {
+            _recordPrivacyForwardFailure(paymentId, "PRIVACY_FORWARD_RETRY_FAILED", _isSameChainPayment(paymentId), msg.sender);
+        }
+    }
+
+    function claimPrivacyEscrow(bytes32 paymentId) external override nonReentrant whenNotPaused {
+        if (privacyForwardCompleted[paymentId]) revert PrivacyForwardAlreadyCompleted();
+
+        address stealthReceiver = privacyStealthByPayment[paymentId];
+        if (stealthReceiver == address(0)) revert PrivacyPaymentNotFound();
+
+        address finalReceiver = privacyFinalReceiverByPayment[paymentId];
+        if (finalReceiver == address(0)) revert MissingFinalReceiver();
+        if (msg.sender != finalReceiver) revert PrivacyRecoveryUnauthorized();
+
+        address token = paymentSettledToken[paymentId];
+        uint256 amount = paymentSettledAmount[paymentId];
+        if (token == address(0)) revert InvalidForwardToken();
+        if (amount == 0) revert InvalidForwardAmount();
+
+        bool sameChain = _isSameChainPayment(paymentId);
+        _forwardFromStealth(paymentId, stealthReceiver, finalReceiver, token, amount, sameChain, msg.sender);
+
+        privacyForwardCompleted[paymentId] = true;
+        paymentSettledToken[paymentId] = token;
+        paymentSettledAmount[paymentId] = amount;
+
+        emit PrivacyForwardCompleted(paymentId, stealthReceiver, finalReceiver, token, amount, sameChain, msg.sender);
+        emit PrivacyEscrowClaimed(paymentId, finalReceiver, token, amount, msg.sender);
+    }
+
+    function refundPrivacyEscrow(bytes32 paymentId) external override nonReentrant whenNotPaused {
+        if (privacyForwardCompleted[paymentId]) revert PrivacyForwardAlreadyCompleted();
+
+        Payment storage payment = payments[paymentId];
+        if (payment.sender == address(0)) revert PrivacyPaymentNotFound();
+        if (!(msg.sender == payment.sender || msg.sender == owner())) revert PrivacyRecoveryUnauthorized();
+
+        address stealthReceiver = privacyStealthByPayment[paymentId];
+        if (stealthReceiver == address(0)) revert PrivacyPaymentNotFound();
+
+        address token = paymentSettledToken[paymentId];
+        uint256 amount = paymentSettledAmount[paymentId];
+        if (token == address(0)) revert InvalidForwardToken();
+        if (amount == 0) revert InvalidForwardAmount();
+
+        bool sameChain = _isSameChainPayment(paymentId);
+        _forwardFromStealth(paymentId, stealthReceiver, payment.sender, token, amount, sameChain, msg.sender);
+
+        privacyForwardCompleted[paymentId] = true;
+        paymentSettledToken[paymentId] = token;
+        paymentSettledAmount[paymentId] = amount;
+
+        emit PrivacyEscrowRefunded(paymentId, payment.sender, token, amount, msg.sender);
     }
 
     // ============ Internal Helper ============
@@ -1054,6 +1136,34 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
         return keccak256(bytes(payment.sourceChainId)) == keccak256(bytes(payment.destChainId));
     }
 
+    function _canActOnPrivacyRecovery(bytes32 paymentId, address actor) internal view returns (bool) {
+        Payment storage payment = payments[paymentId];
+        if (payment.sender == address(0)) return false;
+        return actor == payment.sender || actor == owner() || vault.authorizedSpenders(actor);
+    }
+
+    function _forwardFromStealth(
+        bytes32 paymentId,
+        address stealthReceiver,
+        address finalReceiver,
+        address token,
+        uint256 amount,
+        bool sameChain,
+        address actor
+    ) internal {
+        emit PrivacyForwardRequested(paymentId, stealthReceiver, finalReceiver, token, amount, sameChain, actor);
+
+        IGatewayPrivacyModule(privacyModule).forwardFromStealth(
+            paymentId,
+            stealthReceiver,
+            finalReceiver,
+            token,
+            amount,
+            actor,
+            sameChain
+        );
+    }
+
     function _recordPrivacyForwardFailure(
         bytes32 paymentId,
         string memory reason,
@@ -1066,19 +1176,14 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
         emit PrivacyForwardFailed(paymentId, privacyForwardRetryCount[paymentId], reason, sameChain, actor);
     }
 
-    function _tryFinalizeSameChainPrivacyForward(bytes32 paymentId, address actor) internal {
+    function _finalizeSameChainPrivacyForwardAtomic(bytes32 paymentId) internal {
         address settledToken = paymentSettledToken[paymentId];
         uint256 settledAmount = paymentSettledAmount[paymentId];
-        if (settledToken == address(0) || settledAmount == 0) {
-            _recordPrivacyForwardFailure(paymentId, "PRIVACY_SETTLEMENT_NOT_READY", true, actor);
-            return;
-        }
+        if (settledToken == address(0)) revert InvalidForwardToken();
+        if (settledAmount == 0) revert InvalidForwardAmount();
 
-        try this.finalizePrivacyForward(paymentId, settledToken, settledAmount) {
-            return;
-        } catch {
-            _recordPrivacyForwardFailure(paymentId, "PRIVACY_FORWARD_FAILED_SAME_CHAIN", true, actor);
-        }
+        // Atomic same-chain behavior: forward failure reverts the full createPaymentPrivate tx.
+        this.finalizePrivacyForward(paymentId, settledToken, settledAmount);
     }
 
     function _getTokenDecimals(address token) internal view returns (uint8) {

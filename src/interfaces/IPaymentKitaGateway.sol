@@ -135,4 +135,10 @@ interface IPaymentKitaGateway {
     function finalizePrivacyForward(bytes32 paymentId, address token, uint256 amount) external;
 
     function reportPrivacyForwardFailure(bytes32 paymentId, string calldata reason) external;
+
+    function retryPrivacyForward(bytes32 paymentId) external;
+
+    function claimPrivacyEscrow(bytes32 paymentId) external;
+
+    function refundPrivacyEscrow(bytes32 paymentId) external;
 }
