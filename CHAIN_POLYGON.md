@@ -1,45 +1,54 @@
-# DEPLOYMENT CONTRACT
-TokenRegistry deployed at: 0xd2C69EA4968e9F7cc8C0F447eB9b6DFdFFb1F8D7
-PaymentKitaVault deployed at: 0x6CFc15C526B8d06e7D192C18B5A2C5e3E10F7D8c
-PaymentKitaRouter deployed at: 0xb4a911eC34eDaaEFC393c52bbD926790B9219df4
-PaymentKitaGateway deployed at: 0x7a4f3b606D90e72555A36cB370531638fad19Bf8
-TokenSwapper deployed at: 0xF043b0b91C8F5b6C2DC63897f1632D6D15e199A9
-CCIPSender deployed at: 0xdf6c1dFEf6A16315F6Be460114fB090Aea4dE500
-CCIPReceiverAdapter deployed at: 0xbC75055BdF937353721BFBa9Dd1DCCFD0c70B8dd
-HyperbridgeSender deployed at: 0xeC25Af21e16aD82eD7060DcC90a1D07255253e28 (Verified)
-HyperbridgeReceiver deployed at: 0x86b15744F1CC682e8a7236Bb7B2d02dA957958aD
-LayerZeroSenderAdapter deployed at: 0xCC37C9AF29E58a17AE1191159B4BA67f56D1Bd1e
-LayerZeroReceiverAdapter deployed at: 0x67AAc121bc447F112389921A8B94c3D6FCBd98f9
+# CHAIN POLYGON
+Last updated: 2026-03-10
+Deployment method: `make deploy-polygon-verify-fallback` (resume across RPC)
+Status: ONCHAIN EXECUTION COMPLETE, ALL 18 CONTRACTS VERIFIED
 
-# AUTHORIZED TOKEN
-Registered bridge token as supported: 0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359
-Registered POLYGON_USDC: 0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359
-Registered POLYGON_USDT: 0xc2132D05D31c914a87C6611C10748AEb04B58e8F
-Registered POLYGON_WETH: 0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619
-Registered POLYGON_DAI: 0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063
+## Core Contracts (V2 Modular)
+TokenRegistry: `0x01e0042BC84F1dbc2F88Fb3ae8b1EA6A86Dc491d`
+PaymentKitaVault: `0x28ee150c1F23952cFe01B38612c4D45E28FDA4A3`
+PaymentKitaRouter: `0x84ff4D31f24110dB00a9d7F51B104fD7D6b3bF0F`
+PaymentKitaGateway: `0xcb5fC6c5E7895406b797B11F91AF67A07027a26F`
 
-# PRIVACY READINESS MATRIX (PHASE 4)
-Last updated: 2026-03-09
+## Gateway Runtime Modules
+GatewayValidatorModule: `0x0EBEB5e73e1794e63849e502cDc8ffc275e2e7b3`
+GatewayQuoteModule: `0xe7F4428ECD9F1f1a6E4D5E34614e3d98E5388F04`
+GatewayExecutionModule: `0xAf32bC428C6FBace6b0d1d3Fb8C5c3A78f201694`
+GatewayPrivacyModule: `0x78Af3584F11af9E853F8CDefa3DeD4B464C837d0`
+StealthEscrowFactory: `0xa73Ed3306186f7DA4204fD59e8c7dE8888D16Fc5`
+FeeStrategyDefaultV1: `0x538f7690b6d19AD503917BaF4D71cb0D07400934`
+FeePolicyManager: `0x7700B7d551f6195F6C6a60AE0c7B8fA8e5eEF608`
 
-| Check | Expected | Current |
-|---|---|---|
-| Gateway privacy module wired | `gateway.privacyModule != 0x0` | Pending gate run |
-| Privacy module authorize gateway | `authorizedGateway(gateway)=true` | Pending gate run |
-| Vault authorize gateway/swapper | `authorizedSpenders(gateway|swapper)=true` | Pending gate run |
-| Swapper authorize gateway caller | `authorizedCallers(gateway)=true` | Pending gate run |
-| Adapter auth (gateway/vault/swapper) | CCIP/Hyperbridge/LZ receiver authorized | Pending gate run |
-| Privacy quote probe | `quotePaymentCost + previewApproval` (mode privacy) no revert | Pending gate run |
-| Privacy regression tests | Privacy suites pass | Pending gate run |
+## Swapper + Adapters
+TokenSwapper: `0xe50BDD9CA4289CfD675240B3A7294035655AF8d2`
+CCIPSender: `0xccA8474dF6D534C6E5ddC928D108747E4C6fD65A`
+CCIPReceiverAdapter: `0x10892efc8621D5ecb1de83d2Fd89F36bb4FBC70d`
+HyperbridgeSender: `0xF44019b4f5B08dA0960087Ad4290a0376580Aed1`
+HyperbridgeReceiver: `0xF32e1F744A37a99d55A892905B8018d8f6b1cb99`
+LayerZeroSenderAdapter: `0x4b88661B2b1e3772FDDfe4dfEAB21372b7650aC4`
+LayerZeroReceiverAdapter: `0x244A2Cb45A531d42A1177d06aDb01184125c43B8`
 
-## Gate Command (Template)
-```bash
-cd payment-kita.evm.smartcontract
-source .env
+## Registered Tokens (TokenRegistry)
+Bridge token / USDC: `0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359` (decimals 6)
+IDRT: `0x554cd6bdD03214b10AafA3e0D4D42De0C5D2937b` (decimals 2)
+USDT: `0xc2132D05D31c914a87C6611C10748AEb04B58e8F` (decimals 6)
+WETH: `0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619` (decimals 18)
+DAI: `0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063` (decimals 18)
 
-PRIVACY_GATE_GATEWAY=<POLYGON_GATEWAY> \
-PRIVACY_GATE_VAULT=<POLYGON_VAULT> \
-PRIVACY_GATE_SWAPPER=<POLYGON_SWAPPER> \
-PRIVACY_GATE_PRIVACY_MODULE=<POLYGON_PRIVACY_MODULE> \
-BASE_RPC_URL=$POLYGON_RPC_URL \
-make validate-privacy-route-gate PRIVACY_GATE_SKIP_TESTS=1
-```
+## Swapper V3 Configuration
+V3 Router: `0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45`
+Pool USDC/USDT fee 100
+Pool USDC/WETH fee 500
+Pool USDC/DAI fee 100
+Pool IDRT/USDC fee 500
+
+## Privacy + Wiring Readiness
+Gateway privacy module wired: PASS
+Privacy module authorized gateway: PASS
+Vault authorized spender gateway + swapper: PASS
+Swapper authorized caller gateway: PASS
+Gateway authorized adapters: CCIP, Hyperbridge, LayerZero receivers: PASS
+
+## Explorer References
+Gateway: `https://polygonscan.com/address/0xcb5fC6c5E7895406b797B11F91AF67A07027a26F`
+TokenRegistry: `https://polygonscan.com/address/0x01e0042BC84F1dbc2F88Fb3ae8b1EA6A86Dc491d`
+TokenSwapper: `https://polygonscan.com/address/0xe50BDD9CA4289CfD675240B3A7294035655AF8d2`

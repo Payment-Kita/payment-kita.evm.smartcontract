@@ -37,21 +37,18 @@ contract DeployPolygon is DeployCommon {
 
         // 1. Register tokens + decimals
         address usdc = config.bridgeToken;
-        address idrx = vm.envOr("POLYGON_IDRX", address(0));
         address idrt = vm.envOr("POLYGON_IDRT", address(0));
         address usdt = vm.envOr("POLYGON_USDT", address(0));
         address weth = vm.envOr("POLYGON_WETH", address(0));
         address dai = vm.envOr("POLYGON_DAI", address(0));
 
         uint256 usdcDec = vm.envOr("POLYGON_USDC_DECIMAL", uint256(0));
-        uint256 idrxDec = vm.envOr("POLYGON_IDRX_DECIMAL", uint256(0));
         uint256 idrtDec = vm.envOr("POLYGON_IDRT_DECIMAL", uint256(0));
         uint256 usdtDec = vm.envOr("POLYGON_USDT_DECIMAL", uint256(0));
         uint256 wethDec = vm.envOr("POLYGON_WETH_DECIMAL", uint256(0));
         uint256 daiDec = vm.envOr("POLYGON_DAI_DECIMAL", uint256(0));
 
         registerTokenWithOptionalDecimals(registry, usdc, usdcDec, true, "POLYGON_USDC", "POLYGON_USDC_DECIMAL");
-        registerTokenWithOptionalDecimals(registry, idrx, idrxDec, strict, "POLYGON_IDRX", "POLYGON_IDRX_DECIMAL");
         registerTokenWithOptionalDecimals(registry, idrt, idrtDec, strict, "POLYGON_IDRT", "POLYGON_IDRT_DECIMAL");
         registerTokenWithOptionalDecimals(registry, usdt, usdtDec, strict, "POLYGON_USDT", "POLYGON_USDT_DECIMAL");
         registerTokenWithOptionalDecimals(registry, weth, wethDec, strict, "POLYGON_WETH", "POLYGON_WETH_DECIMAL");
@@ -73,10 +70,6 @@ contract DeployPolygon is DeployCommon {
         if (idrt != address(0) && usdc != address(0)) {
             swapper.setV3Pool(idrt, usdc, 500);
             console.log("Configured IDRT/USDC V3 pool");
-        }
-        if (idrx != address(0) && usdc != address(0)) {
-            swapper.setV3Pool(idrx, usdc, 100);
-            console.log("Configured IDRX/USDC V3 pool");
         }
 
         vm.stopBroadcast();

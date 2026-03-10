@@ -5,7 +5,7 @@
 .PHONY: help env-check build test clean \
 	deploy-base-dry deploy-bsc-dry deploy-arbitrum-dry deploy-polygon-dry \
 	deploy-base deploy-bsc deploy-arbitrum deploy-polygon \
-	deploy-base-verify deploy-bsc-verify deploy-arbitrum-verify deploy-polygon-verify \
+	deploy-base-verify deploy-bsc-verify deploy-arbitrum-verify deploy-polygon-verify deploy-polygon-verify-fallback \
 	rotate-hb-dry rotate-hb-broadcast rotate-hb-verify rotate-hb \
 	redeploy-hb-sender-dry redeploy-hb-sender-broadcast redeploy-hb-sender-verify redeploy-hb-sender \
 	redeploy-gateway-v2-dry redeploy-gateway-v2 \
@@ -57,6 +57,7 @@ help:
 	@echo "  make deploy-bsc-verify"
 	@echo "  make deploy-arbitrum-verify"
 	@echo "  make deploy-polygon-verify"
+	@echo "  make deploy-polygon-verify-fallback"
 	@echo ""
 	@echo "Hyperbridge sender rotation (minimal redeploy):"
 	@echo "  make rotate-hb-dry"
@@ -257,6 +258,11 @@ deploy-polygon-verify: env-check
 		--etherscan-api-key $(POLYGONSCAN_API_KEY) \
 		--chain polygon \
 		$(VERBOSITY) $(SLOW)
+
+deploy-polygon-verify-fallback: env-check
+	@test -n "$(POLYGONSCAN_API_KEY)" || (echo "Missing POLYGONSCAN_API_KEY" && exit 1)
+	@PRIVATE_KEY="$(PRIVATE_KEY)" POLYGONSCAN_API_KEY="$(POLYGONSCAN_API_KEY)" \
+		bash scripts/deploy_polygon_verify_with_fallback.sh
 
 rotate-hb-dry:
 	@test -n "$(PRIVATE_KEY)" || (echo "Missing PRIVATE_KEY" && exit 1)
