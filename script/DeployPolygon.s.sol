@@ -55,21 +55,44 @@ contract DeployPolygon is DeployCommon {
         registerTokenWithOptionalDecimals(registry, dai, daiDec, strict, "POLYGON_DAI", "POLYGON_DAI_DECIMAL");
 
         // 2. Configure V3 Pools on Swapper
-        if (usdc != address(0) && usdt != address(0)) {
-            swapper.setV3Pool(usdc, usdt, 100);
-            console.log("Configured USDC/USDT V3 pool");
+        // Direct pools are stored by unordered pair key, so a single set covers A<->B.
+        uint24 feeUsdtIdrt = uint24(vm.envOr("POLYGON_POOL_FEE_USDT_IDRT", uint256(10000)));
+        uint24 feeUsdcUsdt = uint24(vm.envOr("POLYGON_POOL_FEE_USDC_USDT", uint256(100)));
+        uint24 feeUsdcWeth = uint24(vm.envOr("POLYGON_POOL_FEE_USDC_WETH", uint256(500)));
+        uint24 feeUsdtWeth = uint24(vm.envOr("POLYGON_POOL_FEE_USDT_WETH", uint256(500)));
+        uint24 feeUsdtDai = uint24(vm.envOr("POLYGON_POOL_FEE_USDT_DAI", uint256(100)));
+        uint24 feeUsdcDai = uint24(vm.envOr("POLYGON_POOL_FEE_USDC_DAI", uint256(100)));
+
+        configureV3PoolIfSet(swapper, usdt, idrt, feeUsdtIdrt, "Configured USDT/IDRT V3 pool");
+        configureV3PoolIfSet(swapper, usdc, usdt, feeUsdcUsdt, "Configured USDC/USDT V3 pool");
+        configureV3PoolIfSet(swapper, usdc, weth, feeUsdcWeth, "Configured USDC/WETH V3 pool");
+        configureV3PoolIfSet(swapper, usdt, weth, feeUsdtWeth, "Configured USDT/WETH V3 pool");
+        configureV3PoolIfSet(swapper, usdt, dai, feeUsdtDai, "Configured USDT/DAI V3 pool");
+        configureV3PoolIfSet(swapper, usdc, dai, feeUsdcDai, "Configured USDC/DAI V3 pool");
+
+        // 3. Configure explicit multi-hop routes (directional)
+        // 7) USDC <-> USDT <-> IDRT
+        if (usdc != address(0) && usdt != address(0) && idrt != address(0)) {
+            address[] memory usdcToIdrt = new address[](3);
+            usdcToIdrt[0] = usdc;
+            usdcToIdrt[1] = usdt;
+            usdcToIdrt[2] = idrt;
+            configureMultiHopPathIfSet(swapper, usdc, idrt, usdcToIdrt, "Configured USDC -> USDT -> IDRT");
+
+            address[] memory idrtToUsdc = reversePath(usdcToIdrt);
+            configureMultiHopPathIfSet(swapper, idrt, usdc, idrtToUsdc, "Configured IDRT -> USDT -> USDC");
         }
-        if (usdc != address(0) && weth != address(0)) {
-            swapper.setV3Pool(usdc, weth, 500);
-            console.log("Configured USDC/WETH V3 pool");
-        }
-        if (usdc != address(0) && dai != address(0)) {
-            swapper.setV3Pool(usdc, dai, 100);
-            console.log("Configured USDC/DAI V3 pool");
-        }
-        if (idrt != address(0) && usdc != address(0)) {
-            swapper.setV3Pool(idrt, usdc, 500);
-            console.log("Configured IDRT/USDC V3 pool");
+
+        // 8) DAI <-> USDC <-> WETH
+        if (dai != address(0) && usdc != address(0) && weth != address(0)) {
+            address[] memory daiToWeth = new address[](3);
+            daiToWeth[0] = dai;
+            daiToWeth[1] = usdc;
+            daiToWeth[2] = weth;
+            configureMultiHopPathIfSet(swapper, dai, weth, daiToWeth, "Configured DAI -> USDC -> WETH");
+
+            address[] memory wethToDai = reversePath(daiToWeth);
+            configureMultiHopPathIfSet(swapper, weth, dai, wethToDai, "Configured WETH -> USDC -> DAI");
         }
 
         vm.stopBroadcast();

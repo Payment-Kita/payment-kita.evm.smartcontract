@@ -27,10 +27,12 @@
 	deploy-gateway-modular-v2-dry deploy-gateway-modular-v2-broadcast deploy-gateway-modular-v2-verify \
 	wire-gateway-modules-dry wire-gateway-modules-broadcast \
 	validate-gateway-modular-dry validate-gateway-compat-dry \
-	ccip-rotate-dry ccip-rotate-broadcast ccip-rotate-verify ccip-rotate
+	ccip-rotate-dry ccip-rotate-broadcast ccip-rotate-verify ccip-rotate \
+	phase0-hb-token-gateway-check
 
 VERBOSITY ?= -vvvv
 SLOW ?= --slow
+ARBITRUM_SIZE_OPT_FLAGS ?= --optimizer-runs 1
 
 help:
 	@echo "Payment-Kita EVM deploy commands"
@@ -39,6 +41,7 @@ help:
 	@echo "  make env-check             - check required env vars"
 	@echo "  make build                 - forge build"
 	@echo "  make test                  - forge test --offline"
+	@echo "  make phase0-hb-token-gateway-check - run Hyperbridge TokenGateway phase-0 unblock validator"
 	@echo ""
 	@echo "Dry run (no broadcast):"
 	@echo "  make deploy-base-dry"
@@ -166,6 +169,9 @@ test:
 clean:
 	@forge clean
 
+phase0-hb-token-gateway-check:
+	@bash scripts/hyperbridge_phase0_unblock_check.sh
+
 deploy-base-dry: env-check
 	@forge script script/DeployBase.s.sol:DeployBase \
 		--rpc-url $(BASE_RPC_URL) \
@@ -182,6 +188,7 @@ deploy-arbitrum-dry: env-check
 	@forge script script/DeployArbitrum.s.sol:DeployArbitrum \
 		--rpc-url $(ARBITRUM_RPC_URL) \
 		--private-key $(PRIVATE_KEY) \
+		$(ARBITRUM_SIZE_OPT_FLAGS) \
 		$(VERBOSITY)
 
 deploy-base: env-check
@@ -203,6 +210,9 @@ deploy-arbitrum: env-check
 		--rpc-url $(ARBITRUM_RPC_URL) \
 		--private-key $(PRIVATE_KEY) \
 		--broadcast \
+		--non-interactive \
+		--disable-code-size-limit \
+		$(ARBITRUM_SIZE_OPT_FLAGS) \
 		$(VERBOSITY) $(SLOW)
 
 deploy-base-verify: env-check
@@ -232,6 +242,9 @@ deploy-arbitrum-verify: env-check
 		--private-key $(PRIVATE_KEY) \
 		--broadcast \
 		--verify \
+		--non-interactive \
+		--disable-code-size-limit \
+		$(ARBITRUM_SIZE_OPT_FLAGS) \
 		--etherscan-api-key $(ARBISCAN_API_KEY) \
 		$(VERBOSITY) $(SLOW)
 
@@ -562,17 +575,19 @@ validate-gateway-selector-gate:
 	echo "Selector gate passed: final methods present, legacy methods absent"
 
 validate-bytecode-gate:
-	@report="$$(forge build --sizes)"; \
-	echo "$$report" >/tmp/paymentkita-forge-sizes.txt; \
-	line="$$(echo "$$report" | rg "PaymentKitaGateway\\s+\\|" | head -n1)"; \
-	[ -n "$$line" ] || { echo "Bytecode gate failed: PaymentKitaGateway row not found"; exit 1; }; \
-	runtime_margin="$$(echo "$$line" | awk -F'|' '{gsub(/[ ,]/, "", $$5); print $$5}')"; \
-	runtime_size="$$(echo "$$line" | awk -F'|' '{gsub(/[ ,]/, "", $$3); print $$3}')"; \
-	[ -n "$$runtime_margin" ] || { echo "Bytecode gate failed: runtime margin parse failed"; exit 1; }; \
-	[ -n "$$runtime_size" ] || { echo "Bytecode gate failed: runtime size parse failed"; exit 1; }; \
+	@forge build src/PaymentKitaGateway.sol >/tmp/paymentkita-forge-build.log; \
+	artifact="out/PaymentKitaGateway.sol/PaymentKitaGateway.json"; \
+	[ -f "$$artifact" ] || { echo "Bytecode gate failed: artifact $$artifact not found"; exit 1; }; \
+	runtime_hex_len="$$(jq -r '.deployedBytecode.object | length' "$$artifact")"; \
+	initcode_hex_len="$$(jq -r '.bytecode.object | length' "$$artifact")"; \
+	[ -n "$$runtime_hex_len" ] || { echo "Bytecode gate failed: runtime hex length parse failed"; exit 1; }; \
+	[ -n "$$initcode_hex_len" ] || { echo "Bytecode gate failed: initcode hex length parse failed"; exit 1; }; \
+	runtime_size="$$((runtime_hex_len / 2))"; \
+	initcode_size="$$((initcode_hex_len / 2))"; \
+	runtime_margin="$$((24576 - runtime_size))"; \
 	[ "$$runtime_size" -le 24576 ] || { echo "Bytecode gate failed: runtime size $$runtime_size exceeds EIP-170 limit"; exit 1; }; \
 	[ "$$runtime_margin" -gt 500 ] || { echo "Bytecode gate failed: runtime margin $$runtime_margin <= 500"; exit 1; }; \
-	echo "Bytecode gate passed: runtime_size=$$runtime_size runtime_margin=$$runtime_margin"
+	echo "Bytecode gate passed: runtime_size=$$runtime_size runtime_margin=$$runtime_margin initcode_size=$$initcode_size"
 
 validate-security-regression:
 	@forge test --offline --match-path test/PaymentKitaGateway.V2Phase1.t.sol

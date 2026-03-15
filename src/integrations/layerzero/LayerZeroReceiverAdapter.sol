@@ -5,6 +5,7 @@ import "./OApp.sol";
 import "../../PaymentKitaGateway.sol";
 import "../../vaults/PaymentKitaVault.sol";
 import "../../TokenSwapper.sol";
+import "../RescuableAdapter.sol";
 
 /**
  * @title LayerZeroReceiverAdapter
@@ -12,7 +13,7 @@ import "../../TokenSwapper.sol";
  * @dev Phase 1.4: Fixed lzReceive to use Origin struct matching LZ EndpointV2.
  *      Added allowInitializePath and nextNonce for full V2 compliance.
  */
-contract LayerZeroReceiverAdapter is OApp {
+contract LayerZeroReceiverAdapter is OApp, RescuableAdapter {
 
     // ============ State Variables ============
 

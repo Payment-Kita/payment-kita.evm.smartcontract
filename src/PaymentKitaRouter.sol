@@ -14,18 +14,22 @@ contract PaymentKitaRouter is Ownable, ReentrancyGuard {
     // ============ State Variables ============
 
     /// @notice Mapping from destChainId (string) => bridgeType (uint8) => Adapter Address
-    /// @dev bridgeType: 0 = Hyperbridge (Default), 1 = CCIP, 2 = LayerZero
+    /// @dev bridgeType: 0 = Hyperbridge, 1 = CCIP, 2 = LayerZero, 3 = Hyperbridge Token Gateway
     mapping(string => mapping(uint8 => address)) public adapters;
 
     /// @notice Bridge operating mode: MESSAGE_LIQUIDITY uses dest vault, TOKEN_BRIDGE moves actual tokens
     enum BridgeMode { MESSAGE_LIQUIDITY, TOKEN_BRIDGE }
     mapping(uint8 => BridgeMode) public bridgeModes;
+    mapping(uint8 => bool) public tokenBridgeSupportsDestSwap;
+    mapping(uint8 => bool) public tokenBridgeSupportsPrivacySettlement;
 
     // ============ Events ============
 
     event AdapterRegistered(string destChainId, uint8 bridgeType, address adapter);
     event PaymentRouted(bytes32 indexed paymentId, string destChainId, uint8 bridgeType, address adapter);
     event BridgeModeSet(uint8 bridgeType, BridgeMode mode);
+    event TokenBridgeDestSwapCapabilitySet(uint8 bridgeType, bool enabled);
+    event TokenBridgePrivacySettlementCapabilitySet(uint8 bridgeType, bool enabled);
 
     // ============ Errors ============
 
@@ -55,11 +59,23 @@ contract PaymentKitaRouter is Ownable, ReentrancyGuard {
     }
 
     /// @notice Set the operating mode for a bridge type
-    /// @param bridgeType Bridge type (0=HB, 1=CCIP, 2=LZ)
+    /// @param bridgeType Bridge type (0=HB, 1=CCIP, 2=LZ, 3=HB TokenGateway)
     /// @param mode MESSAGE_LIQUIDITY (dest vault) or TOKEN_BRIDGE (actual token transfer)
     function setBridgeMode(uint8 bridgeType, BridgeMode mode) external onlyOwner {
         bridgeModes[bridgeType] = mode;
         emit BridgeModeSet(bridgeType, mode);
+    }
+
+    /// @notice Declare whether a TOKEN_BRIDGE bridge type supports destination swap execution.
+    function setTokenBridgeDestSwapCapability(uint8 bridgeType, bool enabled) external onlyOwner {
+        tokenBridgeSupportsDestSwap[bridgeType] = enabled;
+        emit TokenBridgeDestSwapCapabilitySet(bridgeType, enabled);
+    }
+
+    /// @notice Declare whether a TOKEN_BRIDGE bridge type supports privacy settlement flow.
+    function setTokenBridgePrivacySettlementCapability(uint8 bridgeType, bool enabled) external onlyOwner {
+        tokenBridgeSupportsPrivacySettlement[bridgeType] = enabled;
+        emit TokenBridgePrivacySettlementCapabilitySet(bridgeType, enabled);
     }
 
     // ============ View Functions ============

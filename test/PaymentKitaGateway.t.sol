@@ -916,6 +916,33 @@ contract PaymentKitaGatewayTest is Test {
         assertEq(totalSourceTokenRequired, 100 * 10**18 + platformFee);
     }
 
+    function testQuotePaymentCostTokenBridgeModeAllowsCrossTokenWhenDestSwapCapabilityEnabled() public {
+        vm.startPrank(router.owner());
+        router.setBridgeMode(1, PaymentKitaRouter.BridgeMode.TOKEN_BRIDGE);
+        router.setTokenBridgeDestSwapCapability(1, true);
+        vm.stopPrank();
+
+        IPaymentKitaGateway.PaymentRequestV2 memory req;
+        req.destChainIdBytes = bytes(DEST_CHAIN);
+        req.receiverBytes = abi.encode(merchant);
+        req.sourceToken = address(token);
+        req.bridgeTokenSource = address(token);
+        req.destToken = address(0x1234);
+        req.amountInSource = 100 * 10**18;
+        req.minBridgeAmountOut = 0;
+        req.minDestAmountOut = 0;
+        req.mode = IPaymentKitaGateway.PaymentMode.REGULAR;
+        req.bridgeOption = 255;
+
+        (, uint256 bridgeFeeNative,, uint8 bridgeType, bool bridgeQuoteOk, string memory bridgeQuoteReason) = gateway
+            .quotePaymentCost(req);
+
+        assertEq(bridgeType, 1);
+        assertTrue(bridgeQuoteOk);
+        assertEq(bytes(bridgeQuoteReason).length, 0);
+        assertEq(bridgeFeeNative, 0);
+    }
+
     function testTrackBPerBytePolicyChangesQuotedPlatformFee() public {
         uint256 amount = 100 * 10**18;
         IPaymentKitaGateway.PaymentRequestV2 memory req;

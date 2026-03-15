@@ -39,6 +39,9 @@ interface ICCIPReceiverValidate {
 }
 
 contract ValidateCCIPPath is Script {
+    uint64 internal constant SELECTOR_BASE = 15971525489660198786;
+    uint64 internal constant SELECTOR_ARBITRUM = 4949039107694359620;
+
     struct ValidateConfig {
         address router;
         address gateway;
@@ -172,7 +175,55 @@ contract ValidateCCIPPath is Script {
     function _resolveValidateConfig() internal returns (ValidateConfig memory cfg) {
         string memory profile = vm.envOr("CCIP_VALIDATE_PROFILE", string("auto"));
 
-        if (_eq(profile, "base") || (_eq(profile, "auto") && block.chainid == 8453)) {
+        if (_eq(profile, "base_arbitrum")) {
+            cfg = ValidateConfig({
+                router: vm.envOr("BASE_CCIP_VALIDATE_ROUTER", address(0x1b91B56aD3aA6B35e5EAe18EE19A42574A545802)),
+                gateway: vm.envOr("BASE_CCIP_VALIDATE_GATEWAY", address(0x08409b0fa63b0bCEb4c4B49DBf286ff943b60011)),
+                vault: vm.envOr("BASE_CCIP_VALIDATE_VAULT", address(0x67d0af7f163F45578679eDa4BDf9042E3E5FEc60)),
+                destCaip2: vm.envOr("BASE_CCIP_VALIDATE_DEST_CAIP2", string("eip155:42161")),
+                bridgeType: uint8(vm.envOr("BASE_CCIP_VALIDATE_BRIDGE_TYPE", uint256(1))),
+                strict: vm.envOr("BASE_CCIP_VALIDATE_STRICT", true),
+                expectedAuthorizedCaller: vm.envOr("BASE_CCIP_VALIDATE_AUTH_CALLER", address(0x1b91B56aD3aA6B35e5EAe18EE19A42574A545802)),
+                expectedDestAdapter: vm.envOr(
+                    "BASE_CCIP_VALIDATE_DEST_ADAPTER_BYTES32",
+                    bytes32(uint256(uint160(address(0x0078f08C7A1c3daB5986F00Dc4E32018a95Ee195))))
+                ),
+                expectedDestChainSelector: uint64(vm.envOr("BASE_CCIP_VALIDATE_DEST_SELECTOR", uint256(SELECTOR_ARBITRUM))),
+                sourceChainSelector: uint64(vm.envOr("BASE_CCIP_VALIDATE_SOURCE_SELECTOR", uint256(SELECTOR_BASE))),
+                receiver: vm.envOr("BASE_CCIP_VALIDATE_RECEIVER", address(0x0078f08C7A1c3daB5986F00Dc4E32018a95Ee195)),
+                trustedSender: vm.envOr(
+                    "BASE_CCIP_VALIDATE_TRUSTED_SENDER_BYTES32",
+                    bytes32(uint256(uint160(address(0x47FEA6C20aC5F029BAB99Ec2ed756d94c54707DE))))
+                ),
+                sourceToken: vm.envOr("BASE_CCIP_VALIDATE_SOURCE_TOKEN", address(0)),
+                destToken: vm.envOr("BASE_CCIP_VALIDATE_DEST_TOKEN", address(0)),
+                amount: vm.envOr("BASE_CCIP_VALIDATE_AMOUNT", uint256(0))
+            });
+        } else if (_eq(profile, "arbitrum_base")) {
+            cfg = ValidateConfig({
+                router: vm.envOr("ARBITRUM_CCIP_VALIDATE_ROUTER", address(0x3722374b187E5400f4423DBc45AD73784604D275)),
+                gateway: vm.envOr("ARBITRUM_CCIP_VALIDATE_GATEWAY", address(0x259294aecdC0006B73b1281c30440A8179CFF44c)),
+                vault: vm.envOr("ARBITRUM_CCIP_VALIDATE_VAULT", address(0x4a92d4079853c78dF38B4BbD574AA88679Adef93)),
+                destCaip2: vm.envOr("ARBITRUM_CCIP_VALIDATE_DEST_CAIP2", string("eip155:8453")),
+                bridgeType: uint8(vm.envOr("ARBITRUM_CCIP_VALIDATE_BRIDGE_TYPE", uint256(1))),
+                strict: vm.envOr("ARBITRUM_CCIP_VALIDATE_STRICT", true),
+                expectedAuthorizedCaller: vm.envOr("ARBITRUM_CCIP_VALIDATE_AUTH_CALLER", address(0x3722374b187E5400f4423DBc45AD73784604D275)),
+                expectedDestAdapter: vm.envOr(
+                    "ARBITRUM_CCIP_VALIDATE_DEST_ADAPTER_BYTES32",
+                    bytes32(uint256(uint160(address(0x46FAc7ac7D89d2daE0B647F31888AdD01cEed2bb))))
+                ),
+                expectedDestChainSelector: uint64(vm.envOr("ARBITRUM_CCIP_VALIDATE_DEST_SELECTOR", uint256(SELECTOR_BASE))),
+                sourceChainSelector: uint64(vm.envOr("ARBITRUM_CCIP_VALIDATE_SOURCE_SELECTOR", uint256(SELECTOR_ARBITRUM))),
+                receiver: vm.envOr("ARBITRUM_CCIP_VALIDATE_RECEIVER", address(0x46FAc7ac7D89d2daE0B647F31888AdD01cEed2bb)),
+                trustedSender: vm.envOr(
+                    "ARBITRUM_CCIP_VALIDATE_TRUSTED_SENDER_BYTES32",
+                    bytes32(uint256(uint160(address(0x5CCe8CdFb77dcCd28ed7Cf0aCf567F92d737ABd9))))
+                ),
+                sourceToken: vm.envOr("ARBITRUM_CCIP_VALIDATE_SOURCE_TOKEN", address(0)),
+                destToken: vm.envOr("ARBITRUM_CCIP_VALIDATE_DEST_TOKEN", address(0)),
+                amount: vm.envOr("ARBITRUM_CCIP_VALIDATE_AMOUNT", uint256(0))
+            });
+        } else if (_eq(profile, "base") || (_eq(profile, "auto") && block.chainid == 8453)) {
             cfg = ValidateConfig({
                 router: 0x1d7550079DAe36f55F4999E0B24AC037D092249C,
                 gateway: 0xC696dCAC9369fD26AB37d116C54cC2f19B156e4D,

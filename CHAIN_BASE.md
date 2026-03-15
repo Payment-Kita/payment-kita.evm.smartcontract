@@ -1,3 +1,7 @@
+# CHAIN BASE
+Last updated: 2026-03-15
+Status: on-chain runtime active; HTG runtime updated; CCIP patch verified locally; Stargate cutover live; legacy LayerZero deauthorized
+
 # DEPLOYMENT CONTRACT
 TokenRegistry deployed at: 0x140fbAA1e8BE387082aeb6088E4Ffe1bf3Ba4d4f
 PaymentKitaVault deployed at: 0x67d0af7f163F45578679eDa4BDf9042E3E5FEc60
@@ -62,6 +66,48 @@ HyperbridgeReceiver deployed at: 0x2AD1ac009fAcc6528352d5ca23fd35F025C328f3
 LayerZeroSenderAdapter deployed at: 0x11bfD843dCEbF421d2f2A07D2C8BA5Db85E501E9
 LayerZeroReceiverAdapter deployed at: 0xc4c28aeeE5bb312970a7266461838565E1eEEc1a
 
+# CCIP ROUTE STATUS (Base <-> Arbitrum)
+CCIP sender kept live: `0x47FEA6C20aC5F029BAB99Ec2ed756d94c54707DE`
+Current live receiver on Base: `0x565CcC753Ea1e54f9F2FEFF1acC8dC4036fFC26e`
+Patch status:
+- Canonical token mismatch fix landed in `src/integrations/ccip/CCIPReceiver.sol`
+- Validated locally in adapter tests: `31/31 PASS`
+- Live receiver rewire broadcast: complete on `2026-03-15`
+- Kept Arbitrum-side sender now points to Base receiver `0x565CcC753Ea1e54f9F2FEFF1acC8dC4036fFC26e`
+Operational note:
+- `CCIP` is not yet approved as official fallback for `Base <-> Arbitrum`
+- previous canary failures were generated against the old receiver and must be re-tested against the new live receiver
+
+# HYPERBRIDGE TOKEN GATEWAY ROUTE STATUS (Base <-> Arbitrum)
+HTG sender (Base -> Arbitrum) after timeout rollout `2026-03-14`: `0x563F10de351393b183FF1d8eF797bbbF3ab5e5e2`
+HTG receiver (Arbitrum -> Base settlement executor peer): `0x5649f75c6aD1140bbABed12978Ec27AdADE4E2d4`
+Remote HTG receiver (Arbitrum): `0x6AEA896bFa65aC62cEc7C59A083B171A4948eB41`
+Token gateway host: `0xFd413e3AFe560182C4471F4d143A96d3e259B6dE`
+Active route timeout:
+- `eip155:42161 -> 10800`
+- `eip155:8453 -> 14400` on remote sender
+Verification:
+- HTG sender unit tests: `12/12 PASS`
+- HTG receiver unit tests: `8/8 PASS`
+- On-chain route readiness revalidated previously: `PASS=22 FAIL=0`
+
+# STARGATE MIGRATION STATUS
+Stargate sender deployed on Base: `0x1F746d1130d161413e0BC5598801798c402331d7`
+Stargate receiver deployed on Base: `0x26C277f9ce9649637BfC325Bce3fA83a60921A5A`
+USDC pool: `0x27a16dc786820B16E5c9028b75B99F6f604b5d26`
+Migration state:
+- Full-mesh dry-run `Base <-> Arbitrum`, `Base <-> Polygon`, `Arbitrum <-> Polygon`: pass
+- Live full-mesh cutover broadcast: complete on `2026-03-15`
+- Legacy LayerZero deauthorization broadcast: complete on `2026-03-15`
+- Gateway default bridge now reads:
+  - `eip155:42161 -> 2`
+  - `eip155:137 -> 2`
+- Live readback:
+  - `gateway.isAuthorizedAdapter(0xc4c28aeeE5bb312970a7266461838565E1eEEc1a) = false`
+  - `vault.authorizedSpenders(0xc4c28aeeE5bb312970a7266461838565E1eEEc1a) = false`
+  - `vault.authorizedSpenders(0x11bfD843dCEbF421d2f2A07D2C8BA5Db85E501E9) = false`
+- Legacy direct `LayerZero` contracts remain deployed only as historical artifacts; runtime authorization is removed
+
 # AUTHORIZED ROUTE PATH
 Registered bridge token as supported: 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913
 Configured IDRX/USDC V3 pool
@@ -84,7 +130,7 @@ Receiver sourceSelector trusted sender (Polygon sender): pending re-validate aft
 Gateway default bridge for eip155:137: 0 (set by `RedeployPaymentKitaGatewayV2PrivacyPatch`)
 Validation: re-run `make ccip-validate-dry`
 
-# LAYERZERO ROUTE STATUS (Base -> Polygon)
+# LEGACY LAYERZERO ROUTE STATUS (Base -> Polygon)
 Route CAIP2: eip155:137
 Bridge type: 2 (LayerZero)
 Sender dstEid: 30109
@@ -92,6 +138,8 @@ Sender dstPeer: pending re-validate after latest Base redeploy
 Receiver srcEid: 30109
 Receiver srcPeer: pending re-validate after latest Base redeploy
 Validation: re-run `make lz-validate-dry`
+Retirement note:
+- direct `LayerZero` on Polygon lane has been cut over to `Stargate`; legacy runtime authorization is removed
 
 # AUTHORIZED TOKEN
 Registered bridge token as supported: 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913

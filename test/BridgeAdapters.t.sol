@@ -643,6 +643,39 @@ contract BridgeAdaptersTest is Test {
         assertEq(destToken.balanceOf(payout), 50_000);
     }
 
+    function testCCIPReceiverAdapterAcceptsCrossChainCanonicalTokenAddressMismatch() public {
+        PaymentKitaVault vault = new PaymentKitaVault();
+        PaymentKitaRouter router = new PaymentKitaRouter();
+        TokenRegistry registry = new TokenRegistry();
+        PaymentKitaGateway gateway = new PaymentKitaGateway(address(vault), address(router), address(registry), address(this));
+
+        address ccipRouter = address(0xC0FFEE);
+        CCIPReceiverAdapter receiver = new CCIPReceiverAdapter(ccipRouter, address(gateway));
+        receiver.setTrustedSender(1, abi.encode(address(0x2)));
+        vault.setAuthorizedSpender(address(receiver), true);
+
+        MockToken baseUsdc = new MockToken();
+        MockToken arbUsdc = new MockToken();
+        require(arbUsdc.transfer(address(receiver), 1_000_000), "fund canonical dest token failed");
+
+        Client.EVMTokenAmount[] memory tokenAmounts = new Client.EVMTokenAmount[](1);
+        tokenAmounts[0] = Client.EVMTokenAmount({token: address(arbUsdc), amount: 50_000});
+        address payout = address(0xBEEF);
+        Client.Any2EVMMessage memory msgObj = Client.Any2EVMMessage({
+            messageId: keccak256("ccip-v2-canonical"),
+            sourceChainSelector: 1,
+            sender: abi.encode(address(0x2)),
+            data: abi.encode(keccak256("pid-canonical"), address(arbUsdc), payout, uint256(0), address(baseUsdc)),
+            destTokenAmounts: tokenAmounts
+        });
+
+        vm.prank(ccipRouter);
+        receiver.ccipReceive(msgObj);
+
+        assertEq(arbUsdc.balanceOf(payout), 50_000);
+        assertEq(arbUsdc.balanceOf(address(vault)), 0);
+    }
+
     function test_payloadV1V2Compat() public {
         PaymentKitaVault vault = new PaymentKitaVault();
         PaymentKitaRouter router = new PaymentKitaRouter();
@@ -696,7 +729,7 @@ contract BridgeAdaptersTest is Test {
         assertEq(token.balanceOf(payoutV2), amountV2);
     }
 
-    function testCCIPReceiverAdapterStoresFailedMessageOnTokenMismatch() public {
+    function testCCIPReceiverAdapterStoresFailedMessageWhenSwapPathMissingSwapper() public {
         PaymentKitaVault vault = new PaymentKitaVault();
         PaymentKitaRouter router = new PaymentKitaRouter();
         TokenRegistry registry = new TokenRegistry();
@@ -714,7 +747,7 @@ contract BridgeAdaptersTest is Test {
             messageId: keccak256("x"),
             sourceChainSelector: 1,
             sender: abi.encode(address(0x2)),
-            data: abi.encode(keccak256("pid"), address(0x2222), address(0x3), uint256(0)),
+            data: abi.encode(keccak256("pid"), address(0x2222), address(0x3), uint256(0), address(0x1111)),
             destTokenAmounts: tokenAmounts
         });
 
@@ -744,7 +777,7 @@ contract BridgeAdaptersTest is Test {
             messageId: keccak256("retryable"),
             sourceChainSelector: 1,
             sender: abi.encode(address(0x2)),
-            data: abi.encode(keccak256("pid-retry"), address(0x2222), address(0x3), uint256(0)),
+            data: abi.encode(keccak256("pid-retry"), address(0x2222), address(0x3), uint256(0), address(0x1111)),
             destTokenAmounts: tokenAmounts
         });
 

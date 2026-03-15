@@ -9,12 +9,13 @@ import {PostRequest} from "@hyperbridge/core/libraries/Message.sol";
 import "../../vaults/PaymentKitaVault.sol";
 import "../../PaymentKitaGateway.sol";
 import "../../TokenSwapper.sol";
+import "../RescuableAdapter.sol";
 
 /**
  * @title HyperbridgeReceiver
  * @notice Bridge Adapter for receiving Hyperbridge messages (ISMP)
  */
-contract HyperbridgeReceiver is HyperApp, Ownable {
+contract HyperbridgeReceiver is HyperApp, RescuableAdapter {
     using SafeERC20 for IERC20;
 
     // ============ State Variables ============

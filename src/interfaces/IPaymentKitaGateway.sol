@@ -48,6 +48,7 @@ interface IPaymentKitaGateway {
         // 0   => Hyperbridge
         // 1   => CCIP
         // 2   => LayerZero
+        // 3   => Hyperbridge Token Gateway
         uint8 bridgeOption;
     }
 

@@ -288,6 +288,14 @@ contract PaymentKitaGatewayV2Phase1Test is Test {
         return address(escrow);
     }
 
+    function _configureTokenBridgeType3(bool supportsDestSwap, bool supportsPrivacySettlement) internal {
+        router.registerAdapter(DEST, 3, address(adapter));
+        gateway.setDefaultBridgeType(DEST, 3);
+        router.setBridgeMode(3, PaymentKitaRouter.BridgeMode.TOKEN_BRIDGE);
+        router.setTokenBridgeDestSwapCapability(3, supportsDestSwap);
+        router.setTokenBridgePrivacySettlementCapability(3, supportsPrivacySettlement);
+    }
+
     function testV2CreatePayment_NormalizesSourceToBridgeToken() public {
         swapper.setRoute(address(sourceToken), address(bridgeToken), true, false, 1e18);
 
@@ -327,6 +335,21 @@ contract PaymentKitaGatewayV2Phase1Test is Test {
         vm.stopPrank();
 
         assertTrue(pid != bytes32(0));
+    }
+
+    function testV2CreatePayment_AcceptsExplicitBridgeOptionTokenGateway() public {
+        _configureTokenBridgeType3(true, false);
+
+        IPaymentKitaGateway.PaymentRequestV2 memory req = _baseReq(address(bridgeToken), address(0), address(destToken));
+        req.bridgeOption = 3;
+
+        vm.startPrank(user);
+        bridgeToken.approve(address(vault), type(uint256).max);
+        bytes32 pid = gateway.createPayment(req);
+        vm.stopPrank();
+
+        assertTrue(pid != bytes32(0));
+        assertEq(gateway.paymentBridgeType(pid), 3);
     }
 
     function testPrivacyCrossChainV2_StealthReceiverAndIntentStored() public {
@@ -580,6 +603,57 @@ contract PaymentKitaGatewayV2Phase1Test is Test {
         assertEq(destToken.balanceOf(user), settled);
     }
 
+    function testPrivacyRecoveryRetry_IncomingContextWithoutSourcePaymentState() public {
+        bytes32 pid = keccak256("incoming-privacy-retry");
+        bytes32 intentId = keccak256("incoming-intent-retry");
+        address stealth = _deployStealthEscrow();
+        uint256 settled = 13e18;
+
+        gateway.setAuthorizedAdapter(address(adapter), true);
+
+        vm.prank(address(adapter));
+        gateway.registerIncomingPrivacyContext(pid, intentId, stealth, receiver, user);
+
+        vm.prank(address(adapter));
+        gateway.finalizeIncomingPayment(pid, stealth, address(destToken), settled);
+
+        vm.prank(address(adapter));
+        gateway.reportPrivacyForwardFailure(pid, "INCOMING_FORWARD_FAILED");
+
+        destToken.mint(stealth, settled);
+
+        vm.prank(user);
+        gateway.retryPrivacyForward(pid);
+
+        assertEq(gateway.privacyIntentByPayment(pid), intentId);
+        assertEq(gateway.privacySourceSenderByPayment(pid), user);
+        assertEq(gateway.privacyForwardCompleted(pid), true);
+        assertEq(destToken.balanceOf(receiver), settled);
+    }
+
+    function testPrivacyRecoveryRefund_IncomingContextWithoutSourcePaymentState() public {
+        bytes32 pid = keccak256("incoming-privacy-refund");
+        bytes32 intentId = keccak256("incoming-intent-refund");
+        address stealth = _deployStealthEscrow();
+        uint256 settled = 17e18;
+
+        gateway.setAuthorizedAdapter(address(adapter), true);
+
+        vm.prank(address(adapter));
+        gateway.registerIncomingPrivacyContext(pid, intentId, stealth, receiver, user);
+
+        vm.prank(address(adapter));
+        gateway.finalizeIncomingPayment(pid, stealth, address(destToken), settled);
+
+        destToken.mint(stealth, settled);
+
+        vm.prank(user);
+        gateway.refundPrivacyEscrow(pid);
+
+        assertEq(gateway.privacyForwardCompleted(pid), true);
+        assertEq(destToken.balanceOf(user), settled);
+    }
+
     function testV2CreatePayment_RevertInvalidBridgeOption() public {
         IPaymentKitaGateway.PaymentRequestV2 memory req = _baseReq(address(bridgeToken), address(0), address(destToken));
         req.bridgeOption = 9;
@@ -697,6 +771,42 @@ contract PaymentKitaGatewayV2Phase1Test is Test {
         assertEq(bridgeType, 2);
         assertFalse(bridgeQuoteOk);
         assertEq(reason, "bridge_route_not_configured");
+    }
+
+    function testV2QuotePaymentCost_TokenBridgeType3CrossTokenRequiresDestSwapCapability() public {
+        _configureTokenBridgeType3(false, false);
+
+        IPaymentKitaGateway.PaymentRequestV2 memory req = _baseReq(address(bridgeToken), address(0), address(destToken));
+
+        (, , , uint8 bridgeType, bool bridgeQuoteOk, string memory reason) = gateway.quotePaymentCost(req);
+        assertEq(bridgeType, 3);
+        assertFalse(bridgeQuoteOk);
+        assertEq(reason, "TOKEN_BRIDGE requires same token");
+    }
+
+    function testV2QuotePaymentCost_TokenBridgeType3CrossTokenAllowedWhenDestSwapEnabled() public {
+        _configureTokenBridgeType3(true, false);
+
+        IPaymentKitaGateway.PaymentRequestV2 memory req = _baseReq(address(bridgeToken), address(0), address(destToken));
+
+        (, uint256 bridgeFeeNative,, uint8 bridgeType, bool bridgeQuoteOk, string memory reason) = gateway
+            .quotePaymentCost(req);
+        assertEq(bridgeType, 3);
+        assertTrue(bridgeQuoteOk);
+        assertEq(bytes(reason).length, 0);
+        assertEq(bridgeFeeNative, 0);
+    }
+
+    function testV2QuotePaymentCost_PrivacyTokenBridgeType3RequiresPrivacySettlementCapability() public {
+        _configureTokenBridgeType3(true, false);
+
+        IPaymentKitaGateway.PaymentRequestV2 memory req = _baseReq(address(bridgeToken), address(0), address(destToken));
+        req.mode = IPaymentKitaGateway.PaymentMode.PRIVACY;
+
+        (, , , uint8 bridgeType, bool bridgeQuoteOk, string memory reason) = gateway.quotePaymentCost(req);
+        assertEq(bridgeType, 3);
+        assertFalse(bridgeQuoteOk);
+        assertEq(reason, "token_bridge_privacy_settlement_unsupported");
     }
 
     function testV2QuotePaymentCost_ReasonBridgeTokenNotConfigured() public {
@@ -834,6 +944,44 @@ contract PaymentKitaGatewayV2Phase1Test is Test {
         vm.expectRevert(PaymentKitaGateway.InvalidStealthReceiver.selector);
         gateway.createPaymentPrivate(req, privacy);
         vm.stopPrank();
+    }
+
+    function testPrivacyV2_RevertWhenTokenBridgeType3PrivacySettlementUnsupported() public {
+        _configureTokenBridgeType3(true, false);
+
+        IPaymentKitaGateway.PaymentRequestV2 memory req = _baseReq(address(bridgeToken), address(0), address(destToken));
+        req.mode = IPaymentKitaGateway.PaymentMode.PRIVACY;
+
+        IPaymentKitaGateway.PrivateRouting memory privacy;
+        privacy.intentId = keccak256("intent-token-bridge-privacy-capability-missing");
+        privacy.stealthReceiver = _deployStealthEscrow();
+
+        vm.startPrank(user);
+        bridgeToken.approve(address(vault), type(uint256).max);
+        vm.expectRevert(PaymentKitaGateway.TokenBridgePrivacySettlementUnsupported.selector);
+        gateway.createPaymentPrivate(req, privacy);
+        vm.stopPrank();
+    }
+
+    function testPrivacyV2_TokenBridgeType3SucceedsWhenPrivacySettlementEnabled() public {
+        _configureTokenBridgeType3(true, true);
+
+        IPaymentKitaGateway.PaymentRequestV2 memory req = _baseReq(address(bridgeToken), address(0), address(destToken));
+        req.mode = IPaymentKitaGateway.PaymentMode.PRIVACY;
+        req.bridgeOption = 3;
+
+        IPaymentKitaGateway.PrivateRouting memory privacy;
+        privacy.intentId = keccak256("intent-token-bridge-privacy-capability-enabled");
+        privacy.stealthReceiver = _deployStealthEscrow();
+
+        vm.startPrank(user);
+        bridgeToken.approve(address(vault), type(uint256).max);
+        bytes32 pid = gateway.createPaymentPrivate(req, privacy);
+        vm.stopPrank();
+
+        assertTrue(pid != bytes32(0));
+        assertEq(gateway.paymentBridgeType(pid), 3);
+        assertEq(gateway.privacyIntentByPayment(pid), privacy.intentId);
     }
 
     function testV2CreatePayment_FuzzAmountBridgeTokenPath(uint96 amount) public {

@@ -198,8 +198,8 @@ contract PaymentKitaGatewayV2Handler is Test {
         address actor = actors[actorSeed % actors.length];
         uint256 amount = bound(amountSeed, 1e6, 1_000_000e18);
         address src = useSourceToken ? address(sourceToken) : address(bridgeToken);
-        uint8 option = bridgeOptionSeed % 4;
-        if (option == 3) {
+        uint8 option = bridgeOptionSeed % 5;
+        if (option == 4) {
             option = 255;
         }
 
@@ -358,7 +358,7 @@ contract PaymentKitaGatewayV2InvariantTest is StdInvariant, Test {
         assertTrue(createdAt > 0, "createdAt missing");
 
         uint8 bridgeType = gateway.paymentBridgeType(paymentId);
-        assertTrue(bridgeType <= 2, "invalid bridge type");
+        assertTrue(bridgeType <= 3, "invalid bridge type");
         assertTrue(router.hasAdapter(DEST, bridgeType), "bridge adapter missing");
 
         if (handler.privatePayment(paymentId)) {

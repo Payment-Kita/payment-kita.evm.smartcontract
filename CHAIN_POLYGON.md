@@ -1,7 +1,7 @@
 # CHAIN POLYGON
-Last updated: 2026-03-10
+Last updated: 2026-03-15
 Deployment method: `make deploy-polygon-verify-fallback` (resume across RPC)
-Status: ONCHAIN EXECUTION COMPLETE, ALL 18 CONTRACTS VERIFIED
+Status: on-chain runtime active; Stargate cutover live; legacy LayerZero deauthorized
 
 ## Core Contracts (V2 Modular)
 TokenRegistry: `0x01e0042BC84F1dbc2F88Fb3ae8b1EA6A86Dc491d`
@@ -26,6 +26,28 @@ HyperbridgeSender: `0xF44019b4f5B08dA0960087Ad4290a0376580Aed1`
 HyperbridgeReceiver: `0xF32e1F744A37a99d55A892905B8018d8f6b1cb99`
 LayerZeroSenderAdapter: `0x4b88661B2b1e3772FDDfe4dfEAB21372b7650aC4`
 LayerZeroReceiverAdapter: `0x244A2Cb45A531d42A1177d06aDb01184125c43B8`
+StargateSenderAdapter: `0x838Ba4E44E24f4d9A655698df535F404448aA2A9`
+StargateReceiverAdapter: `0x5098Df68C5935c923CD551649c74725989bDc3DC`
+
+## Stargate Migration Status
+USDC pool: `0x9Aa02D4Fae7F58b8E8f34c66E756cC734DAc7fe4`
+Target lanes:
+- `Base <-> Polygon`
+- `Arbitrum <-> Polygon`
+Migration state:
+- full-mesh dry-run across `Base`, `Arbitrum`, `Polygon`: pass
+- Polygon Stargate adapters are deployed
+- live full-mesh cutover broadcast: complete on `2026-03-15`
+- legacy LayerZero deauthorization broadcast: complete on `2026-03-15`
+- Gateway default bridge now reads:
+  - `eip155:8453 -> 2`
+  - `eip155:42161 -> 2`
+- `Hyperbridge` is not the target normal path for Polygon USDC lanes
+- Live readback:
+  - `gateway.isAuthorizedAdapter(0x244A2Cb45A531d42A1177d06aDb01184125c43B8) = false`
+  - `vault.authorizedSpenders(0x244A2Cb45A531d42A1177d06aDb01184125c43B8) = false`
+  - `vault.authorizedSpenders(0x4b88661B2b1e3772FDDfe4dfEAB21372b7650aC4) = false`
+- direct `LayerZero` contracts remain deployed only as historical artifacts; runtime authorization is removed
 
 ## Registered Tokens (TokenRegistry)
 Bridge token / USDC: `0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359` (decimals 6)
@@ -46,7 +68,9 @@ Gateway privacy module wired: PASS
 Privacy module authorized gateway: PASS
 Vault authorized spender gateway + swapper: PASS
 Swapper authorized caller gateway: PASS
-Gateway authorized adapters: CCIP, Hyperbridge, LayerZero receivers: PASS
+Gateway authorized adapters: active receivers only; legacy LayerZero receiver deauthorized
+Documentation note:
+- Stargate cutover and legacy LayerZero deauthorization are now reflected in this file
 
 ## Explorer References
 Gateway: `https://polygonscan.com/address/0xcb5fC6c5E7895406b797B11F91AF67A07027a26F`

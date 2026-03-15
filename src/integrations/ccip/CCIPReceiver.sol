@@ -9,13 +9,14 @@ import "./Client.sol";
 import "../../PaymentKitaGateway.sol";
 import "../../vaults/PaymentKitaVault.sol";
 import "../../TokenSwapper.sol";
+import "../RescuableAdapter.sol";
 
 /**
  * @title CCIPReceiverAdapter
  * @notice Bridge Adapter for receiving CCIP messages with trust model
  * @dev Phase 1.3: Added trustedSenders, allowedSourceChains, 4-field decode
  */
-contract CCIPReceiverAdapter is CCIPReceiverBase, Ownable {
+contract CCIPReceiverAdapter is CCIPReceiverBase, RescuableAdapter {
     using SafeERC20 for IERC20;
 
     // ============ State Variables ============
@@ -193,20 +194,22 @@ contract CCIPReceiverAdapter is CCIPReceiverBase, Ownable {
             address encodedSourceToken
         ) = _decodePayload(message.data);
 
-        // V1 payload has no source token; fallback means received token should equal destination token.
-        address sourceToken = encodedSourceToken == address(0) ? destToken : encodedSourceToken;
-
         // --- Extract received token/amount ---
         require(message.destTokenAmounts.length > 0, "No tokens received");
         address receivedToken = message.destTokenAmounts[0].token;
-        require(receivedToken == sourceToken, "Token Mismatch");
         uint256 receivedAmount = message.destTokenAmounts[0].amount;
 
         uint256 settledAmount = receivedAmount;
         address settledToken = receivedToken;
         bool swapped = false;
 
-        if (sourceToken != destToken) {
+        // The payload's optional source token field may contain the source-chain token address,
+        // which is not guaranteed to match the destination-chain token address for canonical
+        // bridges like CCTP-backed USDC. Destination settlement must therefore trust the token
+        // actually delivered by CCIP and only swap when it differs from the requested dest token.
+        encodedSourceToken;
+
+        if (receivedToken != destToken) {
             require(address(swapper) != address(0), "Swapper not configured");
 
             // Move received bridged token to vault and perform vault-based swap.

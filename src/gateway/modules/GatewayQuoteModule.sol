@@ -32,6 +32,7 @@ contract GatewayQuoteModule is Ownable, IGatewayQuoteModule {
         uint8 bridgeType,
         address bridgeTokenSource
     ) external view override returns (bool ok, uint256 feeNative, string memory reason) {
+        PaymentKitaRouter paymentRouter = PaymentKitaRouter(router);
         address effectiveSourceToken = sourceToken;
         uint256 effectiveAmount = amountInSource;
 
@@ -59,8 +60,9 @@ contract GatewayQuoteModule is Ownable, IGatewayQuoteModule {
         }
 
         if (
-            PaymentKitaRouter(router).bridgeModes(bridgeType) == PaymentKitaRouter.BridgeMode.TOKEN_BRIDGE &&
-            effectiveSourceToken != destToken
+            paymentRouter.bridgeModes(bridgeType) == PaymentKitaRouter.BridgeMode.TOKEN_BRIDGE &&
+            effectiveSourceToken != destToken &&
+            !paymentRouter.tokenBridgeSupportsDestSwap(bridgeType)
         ) {
             return (false, 0, "TOKEN_BRIDGE requires same token");
         }
@@ -92,9 +94,11 @@ contract GatewayQuoteModule is Ownable, IGatewayQuoteModule {
         uint256 minAmountOut,
         uint8 bridgeType
     ) external view override returns (bool ok, uint256 feeNative, string memory reason) {
+        PaymentKitaRouter paymentRouter = PaymentKitaRouter(router);
         if (
-            PaymentKitaRouter(router).bridgeModes(bridgeType) == PaymentKitaRouter.BridgeMode.TOKEN_BRIDGE &&
-            sourceToken != destToken
+            paymentRouter.bridgeModes(bridgeType) == PaymentKitaRouter.BridgeMode.TOKEN_BRIDGE &&
+            sourceToken != destToken &&
+            !paymentRouter.tokenBridgeSupportsDestSwap(bridgeType)
         ) {
             return (false, 0, "TOKEN_BRIDGE requires same token");
         }

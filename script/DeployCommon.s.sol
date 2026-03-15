@@ -11,6 +11,8 @@ import "../src/integrations/ccip/CCIPSender.sol";
 import "../src/integrations/ccip/CCIPReceiver.sol";
 import "../src/integrations/hyperbridge/HyperbridgeSender.sol";
 import "../src/integrations/hyperbridge/HyperbridgeReceiver.sol";
+import "../src/integrations/hyperbridge/HyperbridgeTokenGatewaySender.sol";
+import "../src/integrations/hyperbridge/HyperbridgeTokenReceiverAdapter.sol";
 import "../src/integrations/layerzero/LayerZeroSenderAdapter.sol";
 import "../src/integrations/layerzero/LayerZeroReceiverAdapter.sol";
 import "../src/gateway/modules/GatewayValidatorModule.sol";
@@ -25,6 +27,15 @@ import "../src/privacy/StealthEscrowFactory.sol";
 interface IHyperbridgeCfgCommon {
     function setStateMachineId(string calldata chainId, bytes calldata stateMachineId) external;
     function setDestinationContract(string calldata chainId, bytes calldata destination) external;
+}
+
+interface IHyperbridgeTokenGatewayCfgCommon {
+    function setStateMachineId(string calldata chainId, bytes calldata stateMachineId) external;
+    function setRouteSettlementExecutor(string calldata chainId, address settlementExecutor) external;
+    function setNativeCost(string calldata chainId, uint256 nativeCost) external;
+    function setRelayerFee(string calldata chainId, uint256 relayerFee) external;
+    function setRouteTimeout(string calldata chainId, uint64 timeoutSec) external;
+    function setTokenAssetId(address token, bytes32 assetId) external;
 }
 
 interface ICCIPCfgCommon {
@@ -152,6 +163,70 @@ abstract contract DeployCommon is Script {
         }
     }
 
+    function configureV3PoolIfSet(
+        TokenSwapper swapper,
+        address tokenA,
+        address tokenB,
+        uint24 feeTier,
+        string memory logLabel
+    ) internal {
+        if (tokenA == address(0) || tokenB == address(0)) {
+            return;
+        }
+        swapper.setV3Pool(tokenA, tokenB, feeTier);
+        console.log(logLabel);
+    }
+
+    function configureV4PoolIfSet(
+        TokenSwapper swapper,
+        address tokenA,
+        address tokenB,
+        uint24 feeTier,
+        int24 tickSpacing,
+        address hooks,
+        bytes memory hookData,
+        string memory logLabel
+    ) internal {
+        if (tokenA == address(0) || tokenB == address(0)) {
+            return;
+        }
+        swapper.setDirectPool(tokenA, tokenB, feeTier, tickSpacing, hooks, hookData);
+        console.log(logLabel);
+    }
+
+    function configureMultiHopPathIfSet(
+        TokenSwapper swapper,
+        address tokenIn,
+        address tokenOut,
+        address[] memory path,
+        string memory logLabel
+    ) internal {
+        if (tokenIn == address(0) || tokenOut == address(0)) {
+            return;
+        }
+        if (path.length < 2) {
+            return;
+        }
+        if (path[0] != tokenIn || path[path.length - 1] != tokenOut) {
+            return;
+        }
+        for (uint256 i = 0; i < path.length; i++) {
+            if (path[i] == address(0)) {
+                return;
+            }
+        }
+        swapper.setMultiHopPath(tokenIn, tokenOut, path);
+        console.log(logLabel);
+    }
+
+    function reversePath(address[] memory path) internal pure returns (address[] memory reversed) {
+        uint256 len = path.length;
+        reversed = new address[](len);
+        for (uint256 i = 0; i < len; i++) {
+            reversed[i] = path[len - 1 - i];
+        }
+    }
+
     function deploySystem(
         DeploymentConfig memory config,
         RouteBootstrapConfig memory routeConfig
@@ -273,6 +348,8 @@ abstract contract DeployCommon is Script {
         address lzSenderAddr = address(0);
         address lzReceiverAddr = address(0);
         address hbSenderAddr = address(0);
+        address hbTokenSenderAddr = address(0);
+        address hbTokenReceiverAddr = address(0);
         if (config.ccipRouter != address(0)) {
             CCIPSender ccipSender = new CCIPSender(address(vault), config.ccipRouter);
             console.log("CCIPSender deployed at:", address(ccipSender));
@@ -311,6 +388,49 @@ abstract contract DeployCommon is Script {
             vault.setAuthorizedSpender(address(hyperbridgeReceiver), true);
             gateway_.setAuthorizedAdapter(address(hyperbridgeReceiver), true);
             swapper_.setAuthorizedCaller(address(hyperbridgeReceiver), true);
+        }
+
+        address hyperbridgeTokenGatewayAddr = vm.envOr("GWV2_HB_TOKEN_GATEWAY", address(0));
+        if (hyperbridgeTokenGatewayAddr != address(0)) {
+            require(
+                hyperbridgeTokenGatewayAddr.code.length > 0,
+                "DEPLOYMENT ERROR: configured Hyperbridge TokenGateway has no code"
+            );
+
+            HyperbridgeTokenGatewaySender hyperbridgeTokenSender = new HyperbridgeTokenGatewaySender(
+                address(vault),
+                hyperbridgeTokenGatewayAddr,
+                address(gateway_),
+                address(router_)
+            );
+            hbTokenSenderAddr = address(hyperbridgeTokenSender);
+            console.log("HyperbridgeTokenGatewaySender deployed at:", hbTokenSenderAddr);
+
+            HyperbridgeTokenReceiverAdapter hbTokenReceiver = new HyperbridgeTokenReceiverAdapter(
+                hyperbridgeTokenGatewayAddr,
+                address(gateway_),
+                address(vault)
+            );
+            hbTokenReceiverAddr = address(hbTokenReceiver);
+            hbTokenReceiver.setSwapper(address(swapper_));
+            console.log("HyperbridgeTokenReceiverAdapter deployed at:", hbTokenReceiverAddr);
+
+            string memory tokenGatewayAssetSymbol = vm.envOr("GWV2_HB_TOKEN_GATEWAY_ASSET_SYMBOL", string("USDC"));
+            bytes32 tokenGatewayAssetId = vm.envOr("GWV2_HB_TOKEN_GATEWAY_ASSET_ID", bytes32(0));
+            if (tokenGatewayAssetId == bytes32(0)) {
+                tokenGatewayAssetId = keccak256(bytes(tokenGatewayAssetSymbol));
+            }
+            IHyperbridgeTokenGatewayCfgCommon(hbTokenSenderAddr).setTokenAssetId(config.bridgeToken, tokenGatewayAssetId);
+            console.log("HyperbridgeTokenGatewaySender assetId configured.");
+
+            vault.setAuthorizedSpender(hbTokenSenderAddr, true);
+            vault.setAuthorizedSpender(hbTokenReceiverAddr, true);
+            gateway_.setAuthorizedAdapter(hbTokenReceiverAddr, true);
+            swapper_.setAuthorizedCaller(hbTokenReceiverAddr, true);
+
+            router_.setBridgeMode(3, PaymentKitaRouter.BridgeMode.TOKEN_BRIDGE);
+            router_.setTokenBridgeDestSwapCapability(3, true);
+            router_.setTokenBridgePrivacySettlementCapability(3, true);
         }
 
         if (config.layerZeroEndpointV2 != address(0)) {
@@ -408,6 +528,48 @@ abstract contract DeployCommon is Script {
                 if (routeConfig.lzSrcEid > 0 && routeConfig.lzSrcPeer != bytes32(0) && lzReceiverAddr != address(0)) {
                     ILayerZeroReceiverCfgCommon(lzReceiverAddr).setPeer(routeConfig.lzSrcEid, routeConfig.lzSrcPeer);
                 }
+            }
+
+            if (hbTokenSenderAddr != address(0)) {
+                router_.registerAdapter(routeConfig.destCaip2, 3, hbTokenSenderAddr);
+                if (routeConfig.hbStateMachineId.length > 0) {
+                    IHyperbridgeTokenGatewayCfgCommon(hbTokenSenderAddr).setStateMachineId(
+                        routeConfig.destCaip2,
+                        routeConfig.hbStateMachineId
+                    );
+                }
+
+                address hbTokenSettlementExecutor = vm.envOr("GWV2_HB_TOKEN_GATEWAY_SETTLEMENT_EXECUTOR", address(0));
+                if (hbTokenSettlementExecutor != address(0)) {
+                    IHyperbridgeTokenGatewayCfgCommon(hbTokenSenderAddr).setRouteSettlementExecutor(
+                        routeConfig.destCaip2,
+                        hbTokenSettlementExecutor
+                    );
+                }
+
+                uint256 tokenGatewayNativeCost = vm.envOr("GWV2_HB_TOKEN_GATEWAY_NATIVE_COST", uint256(0));
+                uint256 tokenGatewayRelayerFee = vm.envOr("GWV2_HB_TOKEN_GATEWAY_RELAYER_FEE", uint256(0));
+                uint64 tokenGatewayRouteTimeout = uint64(vm.envOr("GWV2_HB_TOKEN_GATEWAY_ROUTE_TIMEOUT", uint256(0)));
+                IHyperbridgeTokenGatewayCfgCommon(hbTokenSenderAddr).setNativeCost(
+                    routeConfig.destCaip2,
+                    tokenGatewayNativeCost
+                );
+                IHyperbridgeTokenGatewayCfgCommon(hbTokenSenderAddr).setRelayerFee(
+                    routeConfig.destCaip2,
+                    tokenGatewayRelayerFee
+                );
+                if (tokenGatewayRouteTimeout > 0) {
+                    IHyperbridgeTokenGatewayCfgCommon(hbTokenSenderAddr).setRouteTimeout(
+                        routeConfig.destCaip2,
+                        tokenGatewayRouteTimeout
+                    );
+                }
+            }
+
+            // Type-3 (Hyperbridge Token Gateway) requires explicit bridge token mapping per lane.
+            if (routeConfig.defaultBridgeType == 3) {
+                gateway_.setBridgeTokenForDest(routeConfig.destCaip2, config.bridgeToken);
+                console.log("Configured bridge token for route:", config.bridgeToken);
             }
 
             gateway_.setDefaultBridgeType(routeConfig.destCaip2, routeConfig.defaultBridgeType);

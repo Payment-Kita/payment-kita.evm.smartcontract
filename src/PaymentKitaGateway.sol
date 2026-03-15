@@ -78,6 +78,7 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
     error SourceSideSwapDisabled();
     error NoRouteToBridgeToken();
     error TokenBridgeRequiresSameToken();
+    error TokenBridgePrivacySettlementUnsupported();
     error PaymentNotFound();
     error UnauthorizedCaller();
     error InvalidPaymentStatus();
@@ -126,6 +127,7 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
     uint8 public constant BRIDGE_OPTION_HYPERBRIDGE = 0;
     uint8 public constant BRIDGE_OPTION_CCIP = 1;
     uint8 public constant BRIDGE_OPTION_LAYERZERO = 2;
+    uint8 public constant BRIDGE_OPTION_HYPERBRIDGE_TOKEN_GATEWAY = 3;
 
     struct PlatformFeePolicy {
         bool enabled;
@@ -133,13 +135,6 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
         uint256 overheadBytes;
         uint256 minFee;
         uint256 maxFee;
-    }
-
-    struct PaymentCostSnapshot {
-        uint256 platformFeeToken;
-        uint256 bridgeFeeNative;
-        uint256 bridgeFeeTokenEq;
-        uint256 totalSourceTokenRequired;
     }
 
     struct PaymentCostQuote {
@@ -152,7 +147,6 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
     }
 
     PlatformFeePolicy public platformFeePolicy;
-    mapping(bytes32 => PaymentCostSnapshot) private paymentCostSnapshots;
 
     // ============ Events ============
     
@@ -163,8 +157,6 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
     event DefaultBridgeTypeSet(string destChainId, uint8 bridgeType);
     event BridgeTokenForDestSet(string destChainId, address bridgeTokenSource);
     event SourceSideSwapToggled(bool enabled);
-    event PaymentRetryRequested(bytes32 indexed paymentId, bytes32 indexed previousMessageId, uint8 retryCount);
-    event MessageRoutingLockUpdated(bool locked);
     event RouteFailed(bytes32 indexed paymentId, bytes reason);
     event PaymentFailed(bytes32 indexed paymentId, string reason);
     event PlatformFeePolicyUpdated(
@@ -174,65 +166,12 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
         uint256 minFee,
         uint256 maxFee
     );
-    event PlatformFeeCharged(bytes32 indexed paymentId, address indexed token, uint256 amount, address indexed recipient);
-    event BridgeFeeCharged(bytes32 indexed paymentId, uint8 bridgeType, uint256 nativeAmount, uint256 tokenEquivalent);
     event NativeFeeBufferUpdated(uint256 oldBps, uint256 newBps);
-    event PaymentCostSnapshotted(
-        bytes32 indexed paymentId,
-        uint256 platformFeeToken,
-        uint256 bridgeFeeNative,
-        uint256 bridgeFeeTokenEq,
-        uint256 totalSourceTokenRequired
-    );
     event PrivacyPaymentCreated(
         bytes32 indexed paymentId,
         bytes32 indexed intentId,
         address indexed stealthReceiver,
         address finalReceiver
-    );
-    event PrivacyForwardRequested(
-        bytes32 indexed paymentId,
-        address indexed stealthReceiver,
-        address indexed finalReceiver,
-        address token,
-        uint256 amount,
-        bool sameChain,
-        address actor
-    );
-    event PrivacyForwardCompleted(
-        bytes32 indexed paymentId,
-        address indexed stealthReceiver,
-        address indexed finalReceiver,
-        address token,
-        uint256 amount,
-        bool sameChain,
-        address actor
-    );
-    event PrivacyForwardFailed(
-        bytes32 indexed paymentId,
-        uint8 retryCount,
-        string reason,
-        bool sameChain,
-        address actor
-    );
-    event PrivacyForwardRetryRequested(
-        bytes32 indexed paymentId,
-        uint8 retryCount,
-        address actor
-    );
-    event PrivacyEscrowClaimed(
-        bytes32 indexed paymentId,
-        address indexed finalReceiver,
-        address indexed token,
-        uint256 amount,
-        address actor
-    );
-    event PrivacyEscrowRefunded(
-        bytes32 indexed paymentId,
-        address indexed sender,
-        address indexed token,
-        uint256 amount,
-        address actor
     );
     event GatewayModulesUpdated(
         address indexed validatorModule,
@@ -255,6 +194,7 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
     mapping(bytes32 => address) public privacyFinalReceiverByPayment;
     mapping(bytes32 => bool) public privacyForwardCompleted;
     mapping(bytes32 => uint8) public privacyForwardRetryCount;
+    mapping(bytes32 => address) public privacySourceSenderByPayment;
     mapping(bytes32 => address) public paymentSettledToken;
     mapping(bytes32 => uint256) public paymentSettledAmount;
 
@@ -451,14 +391,6 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
             createdAt: block.timestamp
         });
 
-        paymentCostSnapshots[paymentId] = PaymentCostSnapshot({
-            platformFeeToken: platformFee,
-            bridgeFeeNative: 0,
-            bridgeFeeTokenEq: 0,
-            totalSourceTokenRequired: totalAmount
-        });
-        emit PaymentCostSnapshotted(paymentId, platformFee, 0, 0, totalAmount);
-        emit PlatformFeeCharged(paymentId, sourceToken, platformFee, feeRecipient);
         uint256 settledAmount = amount;
         if (sourceToken == destToken) {
             vault.pushTokens(sourceToken, receiver, amount);
@@ -536,6 +468,7 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
         privacyIntentByPayment[paymentId] = privacy.intentId;
         privacyStealthByPayment[paymentId] = privacy.stealthReceiver;
         privacyFinalReceiverByPayment[paymentId] = finalReceiver;
+        privacySourceSenderByPayment[paymentId] = msg.sender;
         privacyForwardCompleted[paymentId] = false;
 
         if (privacyModule != address(0)) {
@@ -599,7 +532,6 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
     function _routeWithStoredMessage(bytes32 paymentId, uint256 nativeFeeValue) internal {
         if (_isRoutingMessage) revert RoutingReentrancy();
         _isRoutingMessage = true;
-        emit MessageRoutingLockUpdated(true);
 
         IBridgeAdapter.BridgeMessage storage message = paymentMessages[paymentId];
         bytes32 bridgeMessageId;
@@ -609,7 +541,6 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
             bridgeMessageId = routedMessageId;
         } catch (bytes memory reason) {
             _isRoutingMessage = false;
-            emit MessageRoutingLockUpdated(false);
             emit RouteFailed(paymentId, reason);
             lastRouteError[paymentId] = reason;
             // Forward the original adapter error instead of a generic message
@@ -622,7 +553,6 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
         emit PaymentExecuted(paymentId, bridgeMessageId);
 
         _isRoutingMessage = false;
-        emit MessageRoutingLockUpdated(false);
     }
 
     // ============ Incoming Payment Handler ============
@@ -651,105 +581,108 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
         // We just record the event/state here.
     }
 
+    /**
+     * @notice Register cross-chain privacy metadata on destination chain.
+     * @dev Adapter-only: used by destination executors before invoking privacy forward finalize.
+     */
+    function registerIncomingPrivacyContext(
+        bytes32 paymentId,
+        bytes32 intentId,
+        address stealthReceiver,
+        address finalReceiver,
+        address sourceSender
+    ) external {
+        if (!isAuthorizedAdapter[msg.sender]) revert NotAuthorizedAdapter();
+        if (intentId == bytes32(0)) revert MissingPrivacyIntent();
+        if (stealthReceiver == address(0)) revert InvalidStealthReceiver();
+        if (finalReceiver == address(0)) revert MissingFinalReceiver();
+        if (stealthReceiver == finalReceiver) revert StealthReceiverMustDiffer();
+        if (sourceSender == address(0)) revert PrivacyRecoveryUnauthorized();
+
+        bytes32 existingIntent = privacyIntentByPayment[paymentId];
+        if (existingIntent != bytes32(0)) {
+            if (
+                existingIntent != intentId ||
+                privacyStealthByPayment[paymentId] != stealthReceiver ||
+                privacyFinalReceiverByPayment[paymentId] != finalReceiver ||
+                privacySourceSenderByPayment[paymentId] != sourceSender
+            ) {
+                revert();
+            }
+            return;
+        }
+
+        privacyIntentByPayment[paymentId] = intentId;
+        privacyStealthByPayment[paymentId] = stealthReceiver;
+        privacyFinalReceiverByPayment[paymentId] = finalReceiver;
+        privacySourceSenderByPayment[paymentId] = sourceSender;
+        privacyForwardCompleted[paymentId] = false;
+
+        if (privacyModule != address(0)) {
+            IGatewayPrivacyModule(privacyModule).recordPrivacyIntent(
+                paymentId,
+                intentId,
+                stealthReceiver,
+                sourceSender
+            );
+        }
+
+    }
+
     function finalizePrivacyForward(bytes32 paymentId, address token, uint256 amount) external override {
         if (!vault.authorizedSpenders(msg.sender)) revert UnauthorizedAdapter();
-        if (privacyForwardCompleted[paymentId]) revert PrivacyForwardAlreadyCompleted();
+        (address stealthReceiver, bool sameChain) = _requirePrivacyForwardContext(paymentId);
 
-        address stealthReceiver = privacyStealthByPayment[paymentId];
         address finalReceiver = privacyFinalReceiverByPayment[paymentId];
-        if (stealthReceiver == address(0)) revert PrivacyPaymentNotFound();
         if (finalReceiver == address(0)) revert MissingFinalReceiver();
         if (stealthReceiver == finalReceiver) revert StealthReceiverMustDiffer();
         if (token == address(0)) revert InvalidForwardToken();
         if (amount == 0) revert InvalidForwardAmount();
         if (privacyModule == address(0)) revert PrivacyModuleUnavailable();
 
-        bool sameChain = _isSameChainPayment(paymentId);
-        _forwardFromStealth(paymentId, stealthReceiver, finalReceiver, token, amount, sameChain, msg.sender);
-
-        privacyForwardCompleted[paymentId] = true;
-        paymentSettledToken[paymentId] = token;
-        paymentSettledAmount[paymentId] = amount;
-
-        emit PrivacyForwardCompleted(paymentId, stealthReceiver, finalReceiver, token, amount, sameChain, msg.sender);
+        _completePrivacyForward(paymentId, stealthReceiver, finalReceiver, token, amount, sameChain, msg.sender);
     }
 
     function reportPrivacyForwardFailure(bytes32 paymentId, string calldata reason) external override {
         if (!vault.authorizedSpenders(msg.sender)) revert UnauthorizedAdapter();
         if (privacyForwardCompleted[paymentId]) revert PrivacyForwardAlreadyCompleted();
         if (privacyStealthByPayment[paymentId] == address(0)) revert PrivacyPaymentNotFound();
-        _recordPrivacyForwardFailure(paymentId, reason, _isSameChainPayment(paymentId), msg.sender);
+        _recordPrivacyForwardFailure(paymentId, reason);
     }
 
     function retryPrivacyForward(bytes32 paymentId) external override nonReentrant whenNotPaused {
         if (!_canActOnPrivacyRecovery(paymentId, msg.sender)) revert PrivacyRecoveryUnauthorized();
-        if (privacyForwardCompleted[paymentId]) revert PrivacyForwardAlreadyCompleted();
-        if (privacyStealthByPayment[paymentId] == address(0)) revert PrivacyPaymentNotFound();
+        _requirePrivacyForwardContext(paymentId);
         if (privacyForwardRetryCount[paymentId] == 0) revert PrivacyRetryNotAvailable();
 
-        address token = paymentSettledToken[paymentId];
-        uint256 amount = paymentSettledAmount[paymentId];
-        if (token == address(0)) revert InvalidForwardToken();
-        if (amount == 0) revert InvalidForwardAmount();
-
-        emit PrivacyForwardRetryRequested(paymentId, privacyForwardRetryCount[paymentId], msg.sender);
+        (address token, uint256 amount) = _requireSettledForwardParams(paymentId);
 
         try this.finalizePrivacyForward(paymentId, token, amount) {
             return;
         } catch {
-            _recordPrivacyForwardFailure(paymentId, "PRIVACY_FORWARD_RETRY_FAILED", _isSameChainPayment(paymentId), msg.sender);
+            _recordPrivacyForwardFailure(paymentId, "PRIVACY_FORWARD_RETRY_FAILED");
         }
     }
 
     function claimPrivacyEscrow(bytes32 paymentId) external override nonReentrant whenNotPaused {
-        if (privacyForwardCompleted[paymentId]) revert PrivacyForwardAlreadyCompleted();
-
-        address stealthReceiver = privacyStealthByPayment[paymentId];
-        if (stealthReceiver == address(0)) revert PrivacyPaymentNotFound();
+        (address stealthReceiver, bool sameChain) = _requirePrivacyForwardContext(paymentId);
 
         address finalReceiver = privacyFinalReceiverByPayment[paymentId];
         if (finalReceiver == address(0)) revert MissingFinalReceiver();
         if (msg.sender != finalReceiver) revert PrivacyRecoveryUnauthorized();
 
-        address token = paymentSettledToken[paymentId];
-        uint256 amount = paymentSettledAmount[paymentId];
-        if (token == address(0)) revert InvalidForwardToken();
-        if (amount == 0) revert InvalidForwardAmount();
-
-        bool sameChain = _isSameChainPayment(paymentId);
-        _forwardFromStealth(paymentId, stealthReceiver, finalReceiver, token, amount, sameChain, msg.sender);
-
-        privacyForwardCompleted[paymentId] = true;
-        paymentSettledToken[paymentId] = token;
-        paymentSettledAmount[paymentId] = amount;
-
-        emit PrivacyForwardCompleted(paymentId, stealthReceiver, finalReceiver, token, amount, sameChain, msg.sender);
-        emit PrivacyEscrowClaimed(paymentId, finalReceiver, token, amount, msg.sender);
+        (address token, uint256 amount) = _requireSettledForwardParams(paymentId);
+        _completePrivacyForward(paymentId, stealthReceiver, finalReceiver, token, amount, sameChain, msg.sender);
     }
 
     function refundPrivacyEscrow(bytes32 paymentId) external override nonReentrant whenNotPaused {
-        if (privacyForwardCompleted[paymentId]) revert PrivacyForwardAlreadyCompleted();
+        (address stealthReceiver, bool sameChain) = _requirePrivacyForwardContext(paymentId);
+        address refundReceiver = _resolveRefundReceiver(paymentId);
+        if (refundReceiver == address(0)) revert PrivacyPaymentNotFound();
+        if (!(msg.sender == refundReceiver || msg.sender == owner())) revert PrivacyRecoveryUnauthorized();
 
-        Payment storage payment = payments[paymentId];
-        if (payment.sender == address(0)) revert PrivacyPaymentNotFound();
-        if (!(msg.sender == payment.sender || msg.sender == owner())) revert PrivacyRecoveryUnauthorized();
-
-        address stealthReceiver = privacyStealthByPayment[paymentId];
-        if (stealthReceiver == address(0)) revert PrivacyPaymentNotFound();
-
-        address token = paymentSettledToken[paymentId];
-        uint256 amount = paymentSettledAmount[paymentId];
-        if (token == address(0)) revert InvalidForwardToken();
-        if (amount == 0) revert InvalidForwardAmount();
-
-        bool sameChain = _isSameChainPayment(paymentId);
-        _forwardFromStealth(paymentId, stealthReceiver, payment.sender, token, amount, sameChain, msg.sender);
-
-        privacyForwardCompleted[paymentId] = true;
-        paymentSettledToken[paymentId] = token;
-        paymentSettledAmount[paymentId] = amount;
-
-        emit PrivacyEscrowRefunded(paymentId, payment.sender, token, amount, msg.sender);
+        (address token, uint256 amount) = _requireSettledForwardParams(paymentId);
+        _completePrivacyForward(paymentId, stealthReceiver, refundReceiver, token, amount, sameChain, msg.sender);
     }
 
     // ============ Internal Helper ============
@@ -808,17 +741,9 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
     }
 
     function _resolveBridgeType(string memory destChainId, uint8 bridgeOption) internal view returns (uint8 bridgeType) {
-        if (bridgeOption == BRIDGE_OPTION_DEFAULT) {
-            bridgeType = defaultBridgeTypes[destChainId];
-        } else if (
-            bridgeOption == BRIDGE_OPTION_HYPERBRIDGE ||
-            bridgeOption == BRIDGE_OPTION_CCIP ||
-            bridgeOption == BRIDGE_OPTION_LAYERZERO
-        ) {
-            bridgeType = bridgeOption;
-        } else {
-            revert InvalidBridgeOption(bridgeOption);
-        }
+        (bool valid, uint8 resolvedBridgeType) = _resolveRequestedBridgeType(destChainId, bridgeOption);
+        if (!valid) revert InvalidBridgeOption(bridgeOption);
+        bridgeType = resolvedBridgeType;
 
         if (!router.hasAdapter(destChainId, bridgeType)) {
             revert BridgeRouteNotConfigured(destChainId, bridgeType);
@@ -826,10 +751,7 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
     }
 
     function _resolveBridgeTokenSource(string memory destChainId, address requestBridgeToken) internal view returns (address) {
-        address resolved = requestBridgeToken;
-        if (resolved == address(0)) {
-            resolved = bridgeTokenByDestCaip2[destChainId];
-        }
+        address resolved = _resolveRequestedBridgeToken(destChainId, requestBridgeToken);
         if (resolved == address(0)) revert BridgeTokenNotConfigured();
         if (!tokenRegistry.isTokenSupported(resolved)) revert BridgeTokenNotSupported();
         return resolved;
@@ -839,15 +761,8 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
         string memory destChainId,
         uint8 bridgeOption
     ) internal view returns (bool ok, uint8 bridgeType, string memory reason) {
-        if (bridgeOption == BRIDGE_OPTION_DEFAULT) {
-            bridgeType = defaultBridgeTypes[destChainId];
-        } else if (
-            bridgeOption == BRIDGE_OPTION_HYPERBRIDGE ||
-            bridgeOption == BRIDGE_OPTION_CCIP ||
-            bridgeOption == BRIDGE_OPTION_LAYERZERO
-        ) {
-            bridgeType = bridgeOption;
-        } else {
+        (ok, bridgeType) = _resolveRequestedBridgeType(destChainId, bridgeOption);
+        if (!ok) {
             return (false, 255, "invalid_bridge_option");
         }
 
@@ -861,10 +776,7 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
         string memory destChainId,
         address requestBridgeToken
     ) internal view returns (bool ok, address resolved, string memory reason) {
-        resolved = requestBridgeToken;
-        if (resolved == address(0)) {
-            resolved = bridgeTokenByDestCaip2[destChainId];
-        }
+        resolved = _resolveRequestedBridgeToken(destChainId, requestBridgeToken);
         if (resolved == address(0)) {
             return (false, address(0), "bridge_token_not_configured");
         }
@@ -872,6 +784,26 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
             return (false, address(0), "bridge_token_not_supported");
         }
         return (true, resolved, "");
+    }
+
+    function _resolveRequestedBridgeType(
+        string memory destChainId,
+        uint8 bridgeOption
+    ) internal view returns (bool ok, uint8 bridgeType) {
+        if (bridgeOption == BRIDGE_OPTION_DEFAULT) {
+            return (true, defaultBridgeTypes[destChainId]);
+        }
+        if (bridgeOption <= BRIDGE_OPTION_HYPERBRIDGE_TOKEN_GATEWAY) {
+            return (true, bridgeOption);
+        }
+        return (false, 255);
+    }
+
+    function _resolveRequestedBridgeToken(
+        string memory destChainId,
+        address requestBridgeToken
+    ) internal view returns (address) {
+        return requestBridgeToken == address(0) ? bridgeTokenByDestCaip2[destChainId] : requestBridgeToken;
     }
 
     function _quotePaymentCostInternal(
@@ -936,6 +868,15 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
             return q;
         }
         q.bridgeType = resolvedBridgeType;
+
+        if (
+            req.mode == PaymentMode.PRIVACY &&
+            router.bridgeModes(resolvedBridgeType) == PaymentKitaRouter.BridgeMode.TOKEN_BRIDGE &&
+            !router.tokenBridgeSupportsPrivacySettlement(resolvedBridgeType)
+        ) {
+            q.bridgeQuoteReason = "token_bridge_privacy_settlement_unsupported";
+            return q;
+        }
 
         (bool bridgeTokenOk, address bridgeTokenSource, string memory bridgeTokenReason) = _tryResolveBridgeTokenSource(
             destChainId,
@@ -1069,9 +1010,17 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
 
         if (
             router.bridgeModes(bridgeType) == PaymentKitaRouter.BridgeMode.TOKEN_BRIDGE &&
-            bridgedSourceToken != req.destToken
+            bridgedSourceToken != req.destToken &&
+            !router.tokenBridgeSupportsDestSwap(bridgeType)
         ) {
             revert TokenBridgeRequiresSameToken();
+        }
+        if (
+            req.mode == PaymentMode.PRIVACY &&
+            router.bridgeModes(bridgeType) == PaymentKitaRouter.BridgeMode.TOKEN_BRIDGE &&
+            !router.tokenBridgeSupportsPrivacySettlement(bridgeType)
+        ) {
+            revert TokenBridgePrivacySettlementUnsupported();
         }
 
         IBridgeAdapter.BridgeMessage memory bridgeMessage = IBridgeAdapter.BridgeMessage({
@@ -1088,9 +1037,9 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
         paymentBridgeType[paymentId] = bridgeType;
 
         if (quoteModule == address(0)) revert QuoteModuleNotConfigured();
-        (bool quoteOk, uint256 requiredNativeFee, string memory quoteReason) = IGatewayQuoteModule(quoteModule)
+        (bool quoteOk, uint256 requiredNativeFee, ) = IGatewayQuoteModule(quoteModule)
             .quotePaymentFeeSafe(address(router), destChainId, bridgeType, bridgeMessage);
-        require(quoteOk, quoteReason);
+        if (!quoteOk) revert();
         if (executionModule == address(0)) revert ExecutionModuleNotConfigured();
         IGatewayExecutionModule(executionModule).beforeRoute(
             paymentId,
@@ -1099,16 +1048,6 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
             msg.value,
             requiredNativeFee
         );
-
-        paymentCostSnapshots[paymentId] = PaymentCostSnapshot({
-            platformFeeToken: platformFee,
-            bridgeFeeNative: msg.value,
-            bridgeFeeTokenEq: 0,
-            totalSourceTokenRequired: totalAmount
-        });
-        emit PaymentCostSnapshotted(paymentId, platformFee, msg.value, 0, totalAmount);
-        emit PlatformFeeCharged(paymentId, req.sourceToken, platformFee, feeRecipient);
-        emit BridgeFeeCharged(paymentId, bridgeType, msg.value, 0);
 
         _routeWithStoredMessage(paymentId, msg.value);
 
@@ -1121,7 +1060,7 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
             req.destToken,
             req.amountInSource,
             platformFee,
-            bridgeType == 0 ? "Hyperbridge" : (bridgeType == 1 ? "CCIP" : "LayerZero")
+            ""
         );
     }
 
@@ -1138,8 +1077,34 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
 
     function _canActOnPrivacyRecovery(bytes32 paymentId, address actor) internal view returns (bool) {
         Payment storage payment = payments[paymentId];
-        if (payment.sender == address(0)) return false;
-        return actor == payment.sender || actor == owner() || vault.authorizedSpenders(actor);
+        if (payment.sender != address(0)) {
+            return actor == payment.sender || actor == owner() || vault.authorizedSpenders(actor);
+        }
+        address sourceSender = privacySourceSenderByPayment[paymentId];
+        if (sourceSender == address(0)) return false;
+        return actor == sourceSender || actor == owner() || vault.authorizedSpenders(actor);
+    }
+
+    function _requirePrivacyForwardContext(bytes32 paymentId) internal view returns (address stealthReceiver, bool sameChain) {
+        if (privacyForwardCompleted[paymentId]) revert PrivacyForwardAlreadyCompleted();
+        stealthReceiver = privacyStealthByPayment[paymentId];
+        if (stealthReceiver == address(0)) revert PrivacyPaymentNotFound();
+        sameChain = _isSameChainPayment(paymentId);
+    }
+
+    function _requireSettledForwardParams(bytes32 paymentId) internal view returns (address token, uint256 amount) {
+        token = paymentSettledToken[paymentId];
+        amount = paymentSettledAmount[paymentId];
+        if (token == address(0)) revert InvalidForwardToken();
+        if (amount == 0) revert InvalidForwardAmount();
+    }
+
+    function _resolveRefundReceiver(bytes32 paymentId) internal view returns (address refundReceiver) {
+        Payment storage payment = payments[paymentId];
+        refundReceiver = payment.sender;
+        if (refundReceiver == address(0)) {
+            refundReceiver = privacySourceSenderByPayment[paymentId];
+        }
     }
 
     function _forwardFromStealth(
@@ -1151,8 +1116,6 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
         bool sameChain,
         address actor
     ) internal {
-        emit PrivacyForwardRequested(paymentId, stealthReceiver, finalReceiver, token, amount, sameChain, actor);
-
         IGatewayPrivacyModule(privacyModule).forwardFromStealth(
             paymentId,
             stealthReceiver,
@@ -1164,16 +1127,25 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
         );
     }
 
-    function _recordPrivacyForwardFailure(
+    function _completePrivacyForward(
         bytes32 paymentId,
-        string memory reason,
+        address stealthReceiver,
+        address finalReceiver,
+        address token,
+        uint256 amount,
         bool sameChain,
         address actor
     ) internal {
+        _forwardFromStealth(paymentId, stealthReceiver, finalReceiver, token, amount, sameChain, actor);
+        privacyForwardCompleted[paymentId] = true;
+        paymentSettledToken[paymentId] = token;
+        paymentSettledAmount[paymentId] = amount;
+    }
+
+    function _recordPrivacyForwardFailure(bytes32 paymentId, string memory) internal {
         unchecked {
             privacyForwardRetryCount[paymentId] += 1;
         }
-        emit PrivacyForwardFailed(paymentId, privacyForwardRetryCount[paymentId], reason, sameChain, actor);
     }
 
     function _finalizeSameChainPrivacyForwardAtomic(bytes32 paymentId) internal {
@@ -1240,7 +1212,6 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
         if (paymentRetryCount[paymentId] >= MAX_RETRY_ATTEMPTS) revert RetryLimitReached();
 
         paymentRetryCount[paymentId] += 1;
-        emit PaymentRetryRequested(paymentId, messageId, paymentRetryCount[paymentId]);
 
         // Retry with the stored bridge payload. For bridge types requiring native fee,
         // callers should use executePayment(paymentId) to provide msg.value.
