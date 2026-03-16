@@ -54,7 +54,7 @@ Verification:
 
 ## Stargate Migration Status
 Stargate sender deployed on Arbitrum: `0x64976A3cDE870507B269FD4A8aC2dC9993bc3F3A`
-Stargate receiver deployed on Arbitrum: `0xFE5fA0d938Eeb2aaEF18B8B8D910763234961ABd`
+Stargate receiver deployed on Arbitrum: `0xA0502C041AAE8Ae1A4141D7E7937b34A01510fcf` (RescuableAdapter V2)
 USDC pool: `0xe8CDF27AcD73a434D661C84887215F7598e7d0d3`
 Migration state:
 - Full-mesh dry-run including `Arbitrum <-> Base` and `Arbitrum <-> Polygon`: pass

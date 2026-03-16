@@ -93,7 +93,7 @@ Verification:
 
 # STARGATE MIGRATION STATUS
 Stargate sender deployed on Base: `0x1F746d1130d161413e0BC5598801798c402331d7`
-Stargate receiver deployed on Base: `0x26C277f9ce9649637BfC325Bce3fA83a60921A5A`
+Stargate receiver deployed on Base: `0xE09ed3D37ac311F9ef4aCF8927C27495Cc0D291A` (RescuableAdapter V2)
 USDC pool: `0x27a16dc786820B16E5c9028b75B99F6f604b5d26`
 Migration state:
 - Full-mesh dry-run `Base <-> Arbitrum`, `Base <-> Polygon`, `Arbitrum <-> Polygon`: pass
