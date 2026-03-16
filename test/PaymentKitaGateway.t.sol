@@ -573,7 +573,7 @@ contract PaymentKitaGatewayTest is Test {
         vm.startPrank(user);
         token.approve(address(vault), 101 * 10**18);
 
-        vm.expectRevert(bytes("Empty dest chain ID"));
+        vm.expectRevert(PaymentKitaGateway.EmptyDestChainId.selector);
         _createPaymentLegacy(
             bytes(""),
             abi.encode(merchant),
@@ -643,7 +643,7 @@ contract PaymentKitaGatewayTest is Test {
         token.approve(address(vault), 101 * 10**18);
         string memory sameChain = string.concat("eip155:", vm.toString(block.chainid));
 
-        vm.expectRevert(bytes("Swapper not configured"));
+        vm.expectRevert(PaymentKitaGateway.SwapperNotConfigured.selector);
         _createPaymentLegacy(
             bytes(sameChain),
             abi.encode(merchant),
@@ -798,14 +798,14 @@ contract PaymentKitaGatewayTest is Test {
         vm.stopPrank();
 
         vm.startPrank(stranger);
-        vm.expectRevert(bytes("Unauthorized"));
+        vm.expectRevert(PaymentKitaGateway.UnauthorizedCaller.selector);
         gateway.retryMessage(messageId);
         vm.stopPrank();
     }
 
     function testRetryMessageRevertMessageNotFound() public {
         vm.startPrank(user);
-        vm.expectRevert(bytes("Message not found"));
+        vm.expectRevert(PaymentKitaGateway.MessageNotFound.selector);
         gateway.retryMessage(keccak256("unknown-message"));
         vm.stopPrank();
     }
@@ -823,7 +823,7 @@ contract PaymentKitaGatewayTest is Test {
             100 * 10**18
         );
 
-        vm.expectRevert(bytes("Invalid payment status"));
+        vm.expectRevert(PaymentKitaGateway.InvalidPaymentStatus.selector);
         gateway.executePayment(pid);
         vm.stopPrank();
     }
@@ -851,7 +851,7 @@ contract PaymentKitaGatewayTest is Test {
         }
 
         bytes32 lastMessageId = gateway.paymentToBridgeMessage(pid);
-        vm.expectRevert(bytes("Retry limit reached"));
+        vm.expectRevert(PaymentKitaGateway.RetryLimitReached.selector);
         gateway.retryMessage(lastMessageId);
         vm.stopPrank();
     }
@@ -1056,7 +1056,7 @@ contract PaymentKitaGatewayTest is Test {
 
     function testAdapterFailAndRefundRevertUnauthorized() public {
         vm.prank(stranger);
-        vm.expectRevert(bytes("Not authorized adapter"));
+        vm.expectRevert(PaymentKitaGateway.NotAuthorizedAdapter.selector);
         gateway.adapterFailAndRefund(bytes32(uint256(1)), "nope");
     }
 }
