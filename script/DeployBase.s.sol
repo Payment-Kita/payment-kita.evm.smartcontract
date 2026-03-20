@@ -42,6 +42,8 @@ contract DeployBase is DeployCommon {
         address cbbtc = vm.envOr("BASE_CBBTC", address(0));
         address wbtc = vm.envOr("BASE_WBTC", address(0));
         address idrx = vm.envOr("BASE_IDRX", address(0));
+        address xsgd = vm.envOr("BASE_XSGD", address(0));
+        address myrc = vm.envOr("BASE_MYRC", address(0));
         address cbeth = vm.envOr("BASE_CBETH", address(0));
 
         uint256 usdcDec = vm.envOr("BASE_USDC_DECIMAL", uint256(0));
@@ -51,6 +53,8 @@ contract DeployBase is DeployCommon {
         uint256 cbbtcDec = vm.envOr("BASE_CBBTC_DECIMAL", uint256(0));
         uint256 wbtcDec = vm.envOr("BASE_WBTC_DECIMAL", uint256(0));
         uint256 idrxDec = vm.envOr("BASE_IDRX_DECIMAL", uint256(0));
+        uint256 xsgdDec = vm.envOr("BASE_XSGD_DECIMAL", uint256(0));
+        uint256 myrcDec = vm.envOr("BASE_MYRC_DECIMAL", uint256(0));
 
         registerTokenWithOptionalDecimals(registry, usdc, usdcDec, true, "BASE_USDC", "BASE_USDC_DECIMAL");
         registerTokenWithOptionalDecimals(registry, usde, usdeDec, strict, "BASE_USDE", "BASE_USDE_DECIMAL");
@@ -59,6 +63,8 @@ contract DeployBase is DeployCommon {
         registerTokenWithOptionalDecimals(registry, cbbtc, cbbtcDec, strict, "BASE_CBBTC", "BASE_CBBTC_DECIMAL");
         registerTokenWithOptionalDecimals(registry, wbtc, wbtcDec, strict, "BASE_WBTC", "BASE_WBTC_DECIMAL");
         registerTokenWithOptionalDecimals(registry, idrx, idrxDec, strict, "BASE_IDRX", "BASE_IDRX_DECIMAL");
+        registerTokenWithOptionalDecimals(registry, xsgd, xsgdDec, strict, "BASE_XSGD", "BASE_XSGD_DECIMAL");
+        registerTokenWithOptionalDecimals(registry, myrc, myrcDec, strict, "BASE_MYRC", "BASE_MYRC_DECIMAL");
 
         // 2. Configure V3 Pools on Swapper
         if (idrx != address(0) && usdc != address(0)) {
@@ -76,6 +82,11 @@ contract DeployBase is DeployCommon {
         if (usdc != address(0) && usde != address(0)) {
             swapper.setV3Pool(usdc, usde, 100);
             console.log("Configured USDC/USDe V3 pool");
+        }
+        if (usdc != address(0) && xsgd != address(0)) {
+            uint24 feeUsdcXsgdV3 = uint24(vm.envOr("BASE_POOL_FEE_USDC_XSGD_V3", uint256(100)));
+            swapper.setV3Pool(usdc, xsgd, feeUsdcXsgdV3);
+            console.log("Configured USDC/XSGD V3 pool");
         }
 
         // 3. Configure Multi-hop Paths
@@ -128,6 +139,18 @@ contract DeployBase is DeployCommon {
             pathIdrxUsde[2] = usde;
             swapper.setMultiHopPath(idrx, usde, pathIdrxUsde);
             console.log("Configured IDRX -> USDC -> USDe");
+        }
+        if (idrx != address(0) && xsgd != address(0)) {
+            address[] memory pathIdrxXsgd = new address[](3);
+            pathIdrxXsgd[0] = idrx;
+            pathIdrxXsgd[1] = usdc;
+            pathIdrxXsgd[2] = xsgd;
+            swapper.setMultiHopPath(idrx, xsgd, pathIdrxXsgd);
+            console.log("Configured IDRX -> USDC -> XSGD");
+
+            address[] memory pathXsgdIdrx = reversePath(pathIdrxXsgd);
+            swapper.setMultiHopPath(xsgd, idrx, pathXsgdIdrx);
+            console.log("Configured XSGD -> USDC -> IDRX");
         }
 
         vm.stopBroadcast();

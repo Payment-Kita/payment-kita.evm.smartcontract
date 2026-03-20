@@ -20,7 +20,7 @@ contract StargateSenderAdapter is IBridgeAdapter, Ownable {
 
     uint8 public constant PAYLOAD_VERSION_V1 = 1;
     uint16 public constant DEFAULT_COMPOSE_INDEX = 0;
-    uint128 public constant DEFAULT_COMPOSE_GAS = 250_000;
+    uint128 public constant DEFAULT_COMPOSE_GAS = 750_000;
 
     PaymentKitaVault public vault;
     IStargatePrivacyMetadataGateway public gateway;

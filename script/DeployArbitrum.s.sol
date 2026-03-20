@@ -60,18 +60,24 @@ contract DeployArbitrum is DeployCommon {
         address dai = vm.envOr("ARBITRUM_DAI", address(0));
         address wbtc = vm.envOr("ARBITRUM_WBTC", address(0));
         address xaut = vm.envOr("ARBITRUM_XAUT", address(0));
+        address xsgd = vm.envOr("ARBITRUM_XSGD", address(0));
+        address myrc = vm.envOr("ARBITRUM_MYRC", address(0));
 
         uint256 usdcDec = vm.envOr("ARBITRUM_USDC_DECIMAL", uint256(0));
         uint256 usdtDec = vm.envOr("ARBITRUM_USDT_DECIMAL", uint256(0));
         uint256 daiDec = vm.envOr("ARBITRUM_DAI_DECIMAL", uint256(0));
         uint256 wbtcDec = vm.envOr("ARBITRUM_WBTC_DECIMAL", uint256(0));
         uint256 xautDec = vm.envOr("ARBITRUM_XAUT_DECIMAL", uint256(0));
+        uint256 xsgdDec = vm.envOr("ARBITRUM_XSGD_DECIMAL", uint256(0));
+        uint256 myrcDec = vm.envOr("ARBITRUM_MYRC_DECIMAL", uint256(0));
 
         registerTokenWithOptionalDecimals(registry, usdc, usdcDec, true, "ARBITRUM_USDC", "ARBITRUM_USDC_DECIMAL");
         registerTokenWithOptionalDecimals(registry, usdt, usdtDec, strict, "ARBITRUM_USDT", "ARBITRUM_USDT_DECIMAL");
         registerTokenWithOptionalDecimals(registry, dai, daiDec, strict, "ARBITRUM_DAI", "ARBITRUM_DAI_DECIMAL");
         registerTokenWithOptionalDecimals(registry, wbtc, wbtcDec, strict, "ARBITRUM_WBTC", "ARBITRUM_WBTC_DECIMAL");
         registerTokenWithOptionalDecimals(registry, xaut, xautDec, strict, "ARBITRUM_XAUT", "ARBITRUM_XAUT_DECIMAL");
+        registerTokenWithOptionalDecimals(registry, xsgd, xsgdDec, strict, "ARBITRUM_XSGD", "ARBITRUM_XSGD_DECIMAL");
+        registerTokenWithOptionalDecimals(registry, myrc, myrcDec, strict, "ARBITRUM_MYRC", "ARBITRUM_MYRC_DECIMAL");
 
         // 2. Configure direct pools on Swapper
         // V4 pools
@@ -84,8 +90,8 @@ contract DeployArbitrum is DeployCommon {
         int24 tickUsdcWbtcV4 = int24(int256(vm.envOr("ARBITRUM_POOL_TICK_USDC_WBTC_V4", uint256(10))));
         uint24 feeUsdtWbtcV4 = uint24(vm.envOr("ARBITRUM_POOL_FEE_USDT_WBTC_V4", uint256(500)));
         int24 tickUsdtWbtcV4 = int24(int256(vm.envOr("ARBITRUM_POOL_TICK_USDT_WBTC_V4", uint256(10))));
-        uint24 feeXautUsdtV4 = uint24(vm.envOr("ARBITRUM_POOL_FEE_XAUT_USDT_V4", uint256(500)));
-        int24 tickXautUsdtV4 = int24(int256(vm.envOr("ARBITRUM_POOL_TICK_XAUT_USDT_V4", uint256(10))));
+        uint24 feeXautUsdtV4 = uint24(vm.envOr("ARBITRUM_POOL_FEE_XAUT_USDT_V4", uint256(6000)));
+        int24 tickXautUsdtV4 = int24(int256(vm.envOr("ARBITRUM_POOL_TICK_XAUT_USDT_V4", uint256(120))));
 
         configureV4PoolIfSet(swapper, usdc, usdt, feeUsdcUsdtV4, tickUsdcUsdtV4, v4Hooks, hookData, "Configured USDC/USDT V4 pool");
         configureV4PoolIfSet(swapper, usdc, wbtc, feeUsdcWbtcV4, tickUsdcWbtcV4, v4Hooks, hookData, "Configured USDC/WBTC V4 pool");
@@ -95,8 +101,10 @@ contract DeployArbitrum is DeployCommon {
         // V3 pools
         uint24 feeUsdcDaiV3 = uint24(vm.envOr("ARBITRUM_POOL_FEE_USDC_DAI_V3", uint256(100)));
         uint24 feeUsdtDaiV3 = uint24(vm.envOr("ARBITRUM_POOL_FEE_USDT_DAI_V3", uint256(100)));
+        uint24 feeUsdcXsgdV3 = uint24(vm.envOr("ARBITRUM_POOL_FEE_USDC_XSGD_V3", uint256(100)));
         configureV3PoolIfSet(swapper, usdc, dai, feeUsdcDaiV3, "Configured USDC/DAI V3 pool");
         configureV3PoolIfSet(swapper, usdt, dai, feeUsdtDaiV3, "Configured USDT/DAI V3 pool");
+        configureV3PoolIfSet(swapper, usdc, xsgd, feeUsdcXsgdV3, "Configured USDC/XSGD V3 pool");
 
         // 3. Configure explicit multi-hop routes
         // DAI <> USDC <> USDT <> XAUT
@@ -123,6 +131,31 @@ contract DeployArbitrum is DeployCommon {
 
             address[] memory xautToWbtc = reversePath(wbtcToXaut);
             configureMultiHopPathIfSet(swapper, xaut, wbtc, xautToWbtc, "Configured XAUT -> USDT -> USDC -> WBTC");
+        }
+
+        // XSGD <> USDC <> USDT <> XAUT
+        if (xsgd != address(0) && usdc != address(0) && usdt != address(0) && xaut != address(0)) {
+            address[] memory xsgdToXaut = new address[](4);
+            xsgdToXaut[0] = xsgd;
+            xsgdToXaut[1] = usdc;
+            xsgdToXaut[2] = usdt;
+            xsgdToXaut[3] = xaut;
+            configureMultiHopPathIfSet(swapper, xsgd, xaut, xsgdToXaut, "Configured XSGD -> USDC -> USDT -> XAUT");
+
+            address[] memory xautToXsgd = reversePath(xsgdToXaut);
+            configureMultiHopPathIfSet(swapper, xaut, xsgd, xautToXsgd, "Configured XAUT -> USDT -> USDC -> XSGD");
+        }
+
+        // XSGD <> USDC <> DAI
+        if (xsgd != address(0) && usdc != address(0) && dai != address(0)) {
+            address[] memory xsgdToDai = new address[](3);
+            xsgdToDai[0] = xsgd;
+            xsgdToDai[1] = usdc;
+            xsgdToDai[2] = dai;
+            configureMultiHopPathIfSet(swapper, xsgd, dai, xsgdToDai, "Configured XSGD -> USDC -> DAI");
+
+            address[] memory daiToXsgd = reversePath(xsgdToDai);
+            configureMultiHopPathIfSet(swapper, dai, xsgd, daiToXsgd, "Configured DAI -> USDC -> XSGD");
         }
 
         vm.stopBroadcast();

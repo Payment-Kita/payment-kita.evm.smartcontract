@@ -75,6 +75,49 @@ contract MockFeeAdapterV2 is IBridgeAdapter {
     }
 }
 
+contract MockGatewayAwarePrivacyAdapterV2 is IBridgeAdapter {
+    PaymentKitaGateway public immutable gateway;
+
+    bool public lastSawPrivacy;
+    bytes32 public lastPaymentId;
+    bytes32 public lastIntentId;
+    address public lastStealthReceiver;
+    address public lastFinalReceiver;
+    address public lastSourceSender;
+
+    constructor(address _gateway) {
+        gateway = PaymentKitaGateway(_gateway);
+    }
+
+    function sendMessage(BridgeMessage calldata message) external payable returns (bytes32) {
+        lastPaymentId = message.paymentId;
+        lastIntentId = gateway.privacyIntentByPayment(message.paymentId);
+        lastStealthReceiver = gateway.privacyStealthByPayment(message.paymentId);
+        lastFinalReceiver = gateway.privacyFinalReceiverByPayment(message.paymentId);
+        lastSourceSender = gateway.privacySourceSenderByPayment(message.paymentId);
+        lastSawPrivacy =
+            lastIntentId != bytes32(0) &&
+            lastStealthReceiver != address(0) &&
+            lastFinalReceiver != address(0) &&
+            lastSourceSender != address(0);
+        return keccak256(abi.encode(message.paymentId, message.destChainId, message.amount, block.number));
+    }
+
+    function quoteFee(BridgeMessage calldata) external pure returns (uint256) {
+        return 0;
+    }
+
+    function isRouteConfigured(string calldata) external pure returns (bool) {
+        return true;
+    }
+
+    function getRouteConfig(
+        string calldata
+    ) external pure returns (bool configured, bytes memory configA, bytes memory configB) {
+        return (true, bytes("ok"), bytes(""));
+    }
+}
+
 contract MockV2Swapper is ISwapper {
     using SafeERC20 for IERC20;
 
@@ -199,6 +242,7 @@ contract PaymentKitaGatewayV2Phase1Test is Test {
     TokenRegistry registry;
     MockNoopAdapterV2 adapter;
     MockFeeAdapterV2 feeAdapter;
+    MockGatewayAwarePrivacyAdapterV2 privacyAwareAdapter;
     MockV2Swapper swapper;
     GatewayValidatorModule validatorModule;
     GatewayQuoteModule quoteModule;
@@ -226,6 +270,7 @@ contract PaymentKitaGatewayV2Phase1Test is Test {
         gateway = new PaymentKitaGateway(address(vault), address(router), address(registry), address(this));
         adapter = new MockNoopAdapterV2();
         feeAdapter = new MockFeeAdapterV2();
+        privacyAwareAdapter = new MockGatewayAwarePrivacyAdapterV2(address(gateway));
         swapper = new MockV2Swapper(address(vault));
         validatorModule = new GatewayValidatorModule();
         quoteModule = new GatewayQuoteModule();
@@ -372,6 +417,31 @@ contract PaymentKitaGatewayV2Phase1Test is Test {
         assertEq(gateway.privacyStealthByPayment(pid), privacy.stealthReceiver);
         assertEq(gateway.privacyFinalReceiverByPayment(pid), receiver);
         assertEq(gateway.privacyForwardCompleted(pid), false);
+    }
+
+    function testPrivacyCrossChainV2_MetadataVisibleToAdapterDuringRouting() public {
+        router.registerAdapter(DEST, 2, address(privacyAwareAdapter));
+        gateway.setDefaultBridgeType(DEST, 2);
+
+        IPaymentKitaGateway.PaymentRequestV2 memory req = _baseReq(address(bridgeToken), address(0), address(destToken));
+        req.mode = IPaymentKitaGateway.PaymentMode.PRIVACY;
+        req.bridgeOption = 2;
+
+        IPaymentKitaGateway.PrivateRouting memory privacy;
+        privacy.intentId = keccak256("intent-visible-during-route");
+        privacy.stealthReceiver = _deployStealthEscrow();
+
+        vm.startPrank(user);
+        bridgeToken.approve(address(vault), type(uint256).max);
+        bytes32 pid = gateway.createPaymentPrivate(req, privacy);
+        vm.stopPrank();
+
+        assertEq(privacyAwareAdapter.lastPaymentId(), pid);
+        assertTrue(privacyAwareAdapter.lastSawPrivacy());
+        assertEq(privacyAwareAdapter.lastIntentId(), privacy.intentId);
+        assertEq(privacyAwareAdapter.lastStealthReceiver(), privacy.stealthReceiver);
+        assertEq(privacyAwareAdapter.lastFinalReceiver(), receiver);
+        assertEq(privacyAwareAdapter.lastSourceSender(), user);
     }
 
     function testPrivacySameChainV2_AutoForwardTriggeredAtGateway() public {

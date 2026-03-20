@@ -31,26 +31,35 @@ contract MockUniversalRouter {
         // 0x10 = V4_SWAP
         if (commands[0] == 0x10) {
             (bytes memory actions, bytes[] memory actionParams) = abi.decode(inputs[0], (bytes, bytes[]));
-            
-            if (uint8(actions[0]) == 0x06) { // SWAP_EXACT_IN_SINGLE
-                IV4Router.ExactInputSingleParams memory params = abi.decode(actionParams[0], (IV4Router.ExactInputSingleParams));
-                _handleSwap(params.poolKey, params.zeroForOne, params.amountIn);
-            } else if (uint8(actions[0]) == 0x07) { // SWAP_EXACT_IN (MultiHop)
-                IV4Router.ExactInputParams memory params = abi.decode(actionParams[0], (IV4Router.ExactInputParams));
-                _handleMultiHop(params);
+
+            // Process all actions in sequence (SETTLE -> SWAP -> TAKE)
+            for (uint256 i = 0; i < actions.length; i++) {
+                uint8 action = uint8(actions[i]);
+
+                if (action == 0x06) { // SWAP_EXACT_IN_SINGLE
+                    IV4Router.ExactInputSingleParams memory params = abi.decode(actionParams[i], (IV4Router.ExactInputSingleParams));
+                    _handleSwap(params.poolKey, params.zeroForOne, params.amountIn, params.amountOutMinimum);
+                } else if (action == 0x07) { // SWAP_EXACT_IN (MultiHop)
+                    IV4Router.ExactInputParams memory params = abi.decode(actionParams[i], (IV4Router.ExactInputParams));
+                    _handleMultiHop(params);
+                }
+                // SETTLE (0x0b) and TAKE (0x0e) are handled implicitly by transferFrom/transfer
             }
         }
     }
 
-    function _handleSwap(PoolKey memory key, bool zeroForOne, uint256 amountIn) internal {
+    function _handleSwap(PoolKey memory key, bool zeroForOne, uint256 amountIn, uint256 minAmountOut) internal {
         address tokenIn = zeroForOne ? Currency.unwrap(key.currency0) : Currency.unwrap(key.currency1);
         address tokenOut = zeroForOne ? Currency.unwrap(key.currency1) : Currency.unwrap(key.currency0);
-        
+
         uint256 rate = rates[tokenIn][tokenOut];
         require(rate > 0, "MockRouter: No rate");
-        
+
         uint256 amountOut = (amountIn * rate) / 1e18;
-        
+
+        // Check slippage
+        require(amountOut >= minAmountOut, "MockRouter: slippage");
+
         // Router Logic: Pull In, Push Out
         require(IERC20(tokenIn).transferFrom(msg.sender, address(this), amountIn), "MockRouter transferFrom failed");
         IMintable(tokenOut).blockTransfer(msg.sender, amountOut); // Mock mint or transfer
@@ -58,15 +67,21 @@ contract MockUniversalRouter {
 
     function _handleMultiHop(IV4Router.ExactInputParams memory params) internal {
         address tokenIn = Currency.unwrap(params.currencyIn);
-        // Simple mock: assume final output is implicit from stored rates A->C directly for test simplicity
-        // or iterate paths. For unit test validation, direct A->Z rate is enough to verify plumbing working.
-        
-        address tokenOut = Currency.unwrap(params.path[params.path.length-1].intermediateCurrency);
+        uint256 pathLength = params.path.length;
+        require(pathLength >= 1, "MockRouter: path too short");
+
+        // Get the final output token from the last hop
+        address tokenOut = Currency.unwrap(params.path[pathLength - 1].intermediateCurrency);
+
+        // For mock simplicity, use direct rate from input to final output
         uint256 rate = rates[tokenIn][tokenOut];
         require(rate > 0, "MockRouter: No mh rate");
 
         uint256 amountOut = (params.amountIn * rate) / 1e18;
-        
+
+        // Check slippage
+        require(amountOut >= params.amountOutMinimum, "MockRouter: mh slippage");
+
         require(
             IERC20(tokenIn).transferFrom(msg.sender, address(this), params.amountIn),
             "MockRouter mh transferFrom failed"
@@ -282,7 +297,8 @@ contract TokenSwapperV4Test is Test {
         tokenA.mint(address(this), 100e18);
         tokenA.approve(address(swapper), 100e18);
 
-        vm.expectRevert(TokenSwapper.SlippageExceeded.selector);
+        // Mock router checks slippage and reverts with string error
+        vm.expectRevert(bytes("MockRouter: slippage"));
         swapper.swap(address(tokenA), address(tokenB), 10e18, 9e18, user); // Expect 9, get 5
     }
 

@@ -75,7 +75,7 @@ contract ConfigureStargateLane is Script {
         bool deauthorizeOld = vm.envOr("STARGATE_DEAUTHORIZE_OLD", false);
         address oldSender = vm.envOr("STARGATE_OLD_SENDER", address(0));
         address oldReceiver = vm.envOr("STARGATE_OLD_RECEIVER", address(0));
-        uint128 composeGasLimit = uint128(vm.envOr("STARGATE_COMPOSE_GAS_LIMIT", uint256(250_000)));
+        uint128 composeGasLimit = uint128(vm.envOr("STARGATE_COMPOSE_GAS_LIMIT", uint256(750_000)));
         bytes memory extraOptions = _parseBytesOrEmpty(vm.envOr("STARGATE_EXTRA_OPTIONS_HEX", string("")));
 
         IStargateLaneGateway gateway = IStargateLaneGateway(gatewayAddr);

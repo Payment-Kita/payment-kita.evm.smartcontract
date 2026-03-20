@@ -63,6 +63,7 @@ contract RedeployPaymentKitaGatewayV2PrivacyPatch is Script {
         );
 
         address oldGateway = vm.envOr("REDEPLOY_V2_PATCH_OLD_GATEWAY", vm.envOr("REDEPLOY_V2_OLD_GATEWAY", address(0xf0daa1a24556B68B4636FBE1c90dE326842A164C)));
+        address existingGateway = vm.envOr("REDEPLOY_V2_PATCH_EXISTING_GATEWAY", address(0));
         bool deauthorizeOldGateway = vm.envOr("REDEPLOY_V2_PATCH_DEAUTHORIZE_OLD_GATEWAY", false);
         bool copyConfigFromOldGateway = vm.envOr("REDEPLOY_V2_PATCH_COPY_CONFIG_FROM_OLD_GATEWAY", true);
         bool requireRuntimeWiring = vm.envOr("REDEPLOY_V2_PATCH_REQUIRE_RUNTIME_WIRING", true);
@@ -95,6 +96,28 @@ contract RedeployPaymentKitaGatewayV2PrivacyPatch is Script {
         string memory defaultRouteDest = vm.envOr("REDEPLOY_V2_PATCH_DEFAULT_DEST_CAIP2", vm.envOr("REDEPLOY_V2_DEFAULT_DEST_CAIP2", string("eip155:137")));
         uint8 defaultRouteBridgeType = uint8(vm.envOr("REDEPLOY_V2_PATCH_DEFAULT_BRIDGE_TYPE", vm.envOr("REDEPLOY_V2_DEFAULT_BRIDGE_TYPE", uint256(0))));
 
+        string[4] memory extraDefaultRouteDests;
+        uint8[4] memory extraDefaultRouteBridgeTypes;
+        extraDefaultRouteDests[0] = vm.envOr("REDEPLOY_V2_PATCH_DEFAULT_DEST_CAIP2_0", string(""));
+        extraDefaultRouteDests[1] = vm.envOr("REDEPLOY_V2_PATCH_DEFAULT_DEST_CAIP2_1", string(""));
+        extraDefaultRouteDests[2] = vm.envOr("REDEPLOY_V2_PATCH_DEFAULT_DEST_CAIP2_2", string(""));
+        extraDefaultRouteDests[3] = vm.envOr("REDEPLOY_V2_PATCH_DEFAULT_DEST_CAIP2_3", string(""));
+        extraDefaultRouteBridgeTypes[0] = uint8(vm.envOr("REDEPLOY_V2_PATCH_DEFAULT_BRIDGE_TYPE_0", uint256(0)));
+        extraDefaultRouteBridgeTypes[1] = uint8(vm.envOr("REDEPLOY_V2_PATCH_DEFAULT_BRIDGE_TYPE_1", uint256(0)));
+        extraDefaultRouteBridgeTypes[2] = uint8(vm.envOr("REDEPLOY_V2_PATCH_DEFAULT_BRIDGE_TYPE_2", uint256(0)));
+        extraDefaultRouteBridgeTypes[3] = uint8(vm.envOr("REDEPLOY_V2_PATCH_DEFAULT_BRIDGE_TYPE_3", uint256(0)));
+
+        string[4] memory bridgeTokenDests;
+        address[4] memory bridgeTokenSources;
+        bridgeTokenDests[0] = vm.envOr("REDEPLOY_V2_PATCH_BRIDGE_TOKEN_DEST_0", string(""));
+        bridgeTokenDests[1] = vm.envOr("REDEPLOY_V2_PATCH_BRIDGE_TOKEN_DEST_1", string(""));
+        bridgeTokenDests[2] = vm.envOr("REDEPLOY_V2_PATCH_BRIDGE_TOKEN_DEST_2", string(""));
+        bridgeTokenDests[3] = vm.envOr("REDEPLOY_V2_PATCH_BRIDGE_TOKEN_DEST_3", string(""));
+        bridgeTokenSources[0] = vm.envOr("REDEPLOY_V2_PATCH_BRIDGE_TOKEN_SOURCE_0", address(0));
+        bridgeTokenSources[1] = vm.envOr("REDEPLOY_V2_PATCH_BRIDGE_TOKEN_SOURCE_1", address(0));
+        bridgeTokenSources[2] = vm.envOr("REDEPLOY_V2_PATCH_BRIDGE_TOKEN_SOURCE_2", address(0));
+        bridgeTokenSources[3] = vm.envOr("REDEPLOY_V2_PATCH_BRIDGE_TOKEN_SOURCE_3", address(0));
+
         if (vault == address(0) || router == address(0) || tokenRegistry == address(0) || feeRecipient == address(0)) {
             revert("RedeployV2Patch: zero core address");
         }
@@ -109,7 +132,19 @@ contract RedeployPaymentKitaGatewayV2PrivacyPatch is Script {
 
         vm.startBroadcast(pk);
 
-        PaymentKitaGateway gatewayV2 = new PaymentKitaGateway(vault, router, tokenRegistry, feeRecipient);
+        PaymentKitaGateway gatewayV2;
+        if (existingGateway != address(0)) {
+            gatewayV2 = PaymentKitaGateway(payable(existingGateway));
+            address gatewayOwner = gatewayV2.owner();
+            if (gatewayOwner != deployer) {
+                console.log("Signer:", deployer);
+                console.log("ExistingGateway:", existingGateway);
+                console.log("ExistingGateway owner:", gatewayOwner);
+                revert("RedeployV2Patch: signer is not existing gateway owner");
+            }
+        } else {
+            gatewayV2 = new PaymentKitaGateway(vault, router, tokenRegistry, feeRecipient);
+        }
         IVaultGatewayV2Patch(vault).setAuthorizedSpender(address(gatewayV2), true);
 
         if (copyConfigFromOldGateway && oldGateway != address(0)) {
@@ -178,6 +213,18 @@ contract RedeployPaymentKitaGatewayV2PrivacyPatch is Script {
 
         if (bytes(defaultRouteDest).length > 0) {
             gatewayV2.setDefaultBridgeType(defaultRouteDest, defaultRouteBridgeType);
+        }
+
+        for (uint256 i = 0; i < extraDefaultRouteDests.length; i++) {
+            if (bytes(extraDefaultRouteDests[i]).length > 0) {
+                gatewayV2.setDefaultBridgeType(extraDefaultRouteDests[i], extraDefaultRouteBridgeTypes[i]);
+            }
+        }
+
+        for (uint256 i = 0; i < bridgeTokenDests.length; i++) {
+            if (bytes(bridgeTokenDests[i]).length > 0 && bridgeTokenSources[i] != address(0)) {
+                gatewayV2.setBridgeTokenForDest(bridgeTokenDests[i], bridgeTokenSources[i]);
+            }
         }
 
         if (deauthorizeOldGateway && oldGateway != address(0)) {

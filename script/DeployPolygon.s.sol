@@ -39,24 +39,28 @@ contract DeployPolygon is DeployCommon {
         address usdc = config.bridgeToken;
         address idrt = vm.envOr("POLYGON_IDRT", address(0));
         address usdt = vm.envOr("POLYGON_USDT", address(0));
+        address xsgd = vm.envOr("POLYGON_XSGD", address(0));
         address weth = vm.envOr("POLYGON_WETH", address(0));
         address dai = vm.envOr("POLYGON_DAI", address(0));
 
         uint256 usdcDec = vm.envOr("POLYGON_USDC_DECIMAL", uint256(0));
         uint256 idrtDec = vm.envOr("POLYGON_IDRT_DECIMAL", uint256(0));
         uint256 usdtDec = vm.envOr("POLYGON_USDT_DECIMAL", uint256(0));
+        uint256 xsgdDec = vm.envOr("POLYGON_XSGD_DECIMAL", uint256(0));
         uint256 wethDec = vm.envOr("POLYGON_WETH_DECIMAL", uint256(0));
         uint256 daiDec = vm.envOr("POLYGON_DAI_DECIMAL", uint256(0));
 
         registerTokenWithOptionalDecimals(registry, usdc, usdcDec, true, "POLYGON_USDC", "POLYGON_USDC_DECIMAL");
         registerTokenWithOptionalDecimals(registry, idrt, idrtDec, strict, "POLYGON_IDRT", "POLYGON_IDRT_DECIMAL");
         registerTokenWithOptionalDecimals(registry, usdt, usdtDec, strict, "POLYGON_USDT", "POLYGON_USDT_DECIMAL");
+        registerTokenWithOptionalDecimals(registry, xsgd, xsgdDec, strict, "POLYGON_XSGD", "POLYGON_XSGD_DECIMAL");
         registerTokenWithOptionalDecimals(registry, weth, wethDec, strict, "POLYGON_WETH", "POLYGON_WETH_DECIMAL");
         registerTokenWithOptionalDecimals(registry, dai, daiDec, strict, "POLYGON_DAI", "POLYGON_DAI_DECIMAL");
 
         // 2. Configure V3 Pools on Swapper
         // Direct pools are stored by unordered pair key, so a single set covers A<->B.
         uint24 feeUsdtIdrt = uint24(vm.envOr("POLYGON_POOL_FEE_USDT_IDRT", uint256(10000)));
+        uint24 feeUsdtXsgd = uint24(vm.envOr("POLYGON_POOL_FEE_USDT_XSGD", uint256(100)));
         uint24 feeUsdcUsdt = uint24(vm.envOr("POLYGON_POOL_FEE_USDC_USDT", uint256(100)));
         uint24 feeUsdcWeth = uint24(vm.envOr("POLYGON_POOL_FEE_USDC_WETH", uint256(500)));
         uint24 feeUsdtWeth = uint24(vm.envOr("POLYGON_POOL_FEE_USDT_WETH", uint256(500)));
@@ -64,6 +68,7 @@ contract DeployPolygon is DeployCommon {
         uint24 feeUsdcDai = uint24(vm.envOr("POLYGON_POOL_FEE_USDC_DAI", uint256(100)));
 
         configureV3PoolIfSet(swapper, usdt, idrt, feeUsdtIdrt, "Configured USDT/IDRT V3 pool");
+        configureV3PoolIfSet(swapper, usdt, xsgd, feeUsdtXsgd, "Configured USDT/XSGD V3 pool");
         configureV3PoolIfSet(swapper, usdc, usdt, feeUsdcUsdt, "Configured USDC/USDT V3 pool");
         configureV3PoolIfSet(swapper, usdc, weth, feeUsdcWeth, "Configured USDC/WETH V3 pool");
         configureV3PoolIfSet(swapper, usdt, weth, feeUsdtWeth, "Configured USDT/WETH V3 pool");
@@ -81,6 +86,18 @@ contract DeployPolygon is DeployCommon {
 
             address[] memory idrtToUsdc = reversePath(usdcToIdrt);
             configureMultiHopPathIfSet(swapper, idrt, usdc, idrtToUsdc, "Configured IDRT -> USDT -> USDC");
+        }
+
+        // USDC <-> USDT <-> XSGD
+        if (usdc != address(0) && usdt != address(0) && xsgd != address(0)) {
+            address[] memory usdcToXsgd = new address[](3);
+            usdcToXsgd[0] = usdc;
+            usdcToXsgd[1] = usdt;
+            usdcToXsgd[2] = xsgd;
+            configureMultiHopPathIfSet(swapper, usdc, xsgd, usdcToXsgd, "Configured USDC -> USDT -> XSGD");
+
+            address[] memory xsgdToUsdc = reversePath(usdcToXsgd);
+            configureMultiHopPathIfSet(swapper, xsgd, usdc, xsgdToUsdc, "Configured XSGD -> USDT -> USDC");
         }
 
         // 8) DAI <-> USDC <-> WETH

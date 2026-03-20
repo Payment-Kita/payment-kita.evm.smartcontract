@@ -89,6 +89,7 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
     error NotAuthorizedAdapter();
     error PrivacyRecoveryUnauthorized();
     error PrivacyRetryNotAvailable();
+    error PrivacyPaymentIdMismatch(bytes32 expectedPaymentId, bytes32 actualPaymentId);
 
     // ============ State Variables ============
 
@@ -463,27 +464,41 @@ contract PaymentKitaGateway is IPaymentKitaGateway, Ownable, ReentrancyGuard, Pa
         if (privacy.stealthReceiver == finalReceiver) revert StealthReceiverMustDiffer();
 
         bytes memory privateReceiverBytes = abi.encode(privacy.stealthReceiver);
-        paymentId = _createPaymentV2Internal(req, req.bridgeOption, privateReceiverBytes);
+        string memory destChainId = string(req.destChainIdBytes);
+        bytes32 expectedPaymentId = PaymentLib.calculatePaymentId(
+            msg.sender,
+            privacy.stealthReceiver,
+            destChainId,
+            req.sourceToken,
+            req.amountInSource,
+            block.timestamp
+        );
 
-        privacyIntentByPayment[paymentId] = privacy.intentId;
-        privacyStealthByPayment[paymentId] = privacy.stealthReceiver;
-        privacyFinalReceiverByPayment[paymentId] = finalReceiver;
-        privacySourceSenderByPayment[paymentId] = msg.sender;
-        privacyForwardCompleted[paymentId] = false;
+        privacyIntentByPayment[expectedPaymentId] = privacy.intentId;
+        privacyStealthByPayment[expectedPaymentId] = privacy.stealthReceiver;
+        privacyFinalReceiverByPayment[expectedPaymentId] = finalReceiver;
+        privacySourceSenderByPayment[expectedPaymentId] = msg.sender;
+        privacyForwardCompleted[expectedPaymentId] = false;
 
         if (privacyModule != address(0)) {
             IGatewayPrivacyModule(privacyModule).recordPrivacyIntent(
-                paymentId,
+                expectedPaymentId,
                 privacy.intentId,
                 privacy.stealthReceiver,
                 msg.sender
             );
         }
-        emit PrivacyPaymentCreated(paymentId, privacy.intentId, privacy.stealthReceiver, finalReceiver);
+
+        paymentId = _createPaymentV2Internal(req, req.bridgeOption, privateReceiverBytes);
+        if (paymentId != expectedPaymentId) {
+            revert PrivacyPaymentIdMismatch(expectedPaymentId, paymentId);
+        }
+
+        emit PrivacyPaymentCreated(expectedPaymentId, privacy.intentId, privacy.stealthReceiver, finalReceiver);
 
         bool sameChain = keccak256(req.destChainIdBytes) == keccak256(bytes(currentChainCaip2));
         if (sameChain) {
-            _finalizeSameChainPrivacyForwardAtomic(paymentId);
+            _finalizeSameChainPrivacyForwardAtomic(expectedPaymentId);
         }
     }
 

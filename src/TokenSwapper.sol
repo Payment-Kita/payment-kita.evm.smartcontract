@@ -98,6 +98,8 @@ contract TokenSwapper is ISwapper, Ownable, ReentrancyGuard {
     // Actions: 0x06 (SWAP_EXACT_IN_SINGLE)
     uint8 internal constant V4_ACTION_SWAP_EXACT_IN_SINGLE = 0x06;
     uint8 internal constant V4_ACTION_SWAP_EXACT_IN = 0x07;
+    uint8 internal constant V4_ACTION_SETTLE = 0x0b;
+    uint8 internal constant V4_ACTION_TAKE = 0x0e;
 
     // ============ Errors ============
 
@@ -495,7 +497,6 @@ contract TokenSwapper is ISwapper, Ownable, ReentrancyGuard {
         uint256 minAmountOut
     ) internal returns (uint256 amountOut) {
         if (universalRouter == address(0)) return amountIn;
-
         bytes32 pairKey = _getPairKey(tokenIn, tokenOut);
         PoolConfig memory config = directPools[pairKey];
         if (!config.isActive) revert PoolNotActive(); 
@@ -503,46 +504,43 @@ contract TokenSwapper is ISwapper, Ownable, ReentrancyGuard {
         IERC20(tokenIn).forceApprove(universalRouter, amountIn);
         uint256 balanceBefore = IERC20(tokenOut).balanceOf(address(this));
 
-        // Construct PoolKey
-        (Currency currency0, Currency currency1) = _sortTokens(tokenIn, tokenOut);
-        PoolKey memory key = PoolKey({
-            currency0: currency0,
-            currency1: currency1,
-            fee: config.fee,
-            tickSpacing: config.tickSpacing,
-            hooks: config.hooks
-        });
+        // Use a scope to clear stack variables before the call
+        {
+            (Currency currency0, Currency currency1) = _sortTokens(tokenIn, tokenOut);
+            
+            // Sanity check against uint128 for V4 router
+            if (amountIn > type(uint128).max || minAmountOut > type(uint128).max) revert SlippageExceeded();
 
-        // Determine zeroForOne
-        bool zeroForOne = tokenIn < tokenOut;
+            // Encode V4 Router Actions & Params
+            bytes memory actions = abi.encodePacked(
+                V4_ACTION_SETTLE,
+                V4_ACTION_SWAP_EXACT_IN_SINGLE,
+                V4_ACTION_TAKE
+            );
+            
+            bytes[] memory actionParams = new bytes[](3);
+            actionParams[0] = abi.encode(tokenIn, amountIn, true);
+            actionParams[1] = abi.encode(IV4Router.ExactInputSingleParams({
+                poolKey: PoolKey({
+                    currency0: currency0,
+                    currency1: currency1,
+                    fee: config.fee,
+                    tickSpacing: config.tickSpacing,
+                    hooks: config.hooks
+                }),
+                zeroForOne: tokenIn < tokenOut,
+                amountIn: uint128(amountIn),
+                amountOutMinimum: uint128(minAmountOut),
+                hookData: config.hookData
+            }));
+            actionParams[2] = abi.encode(tokenOut, address(this), minAmountOut);
 
-        // Sanity check against uint128 for V4 router
-        if (amountIn > type(uint128).max || minAmountOut > type(uint128).max) revert SlippageExceeded();
+            bytes[] memory inputs = new bytes[](1);
+            inputs[0] = abi.encode(actions, actionParams);
 
-        // Encode V4 Router Actions
-        // Action: SWAP_EXACT_IN_SINGLE
-        bytes memory actions = abi.encodePacked(V4_ACTION_SWAP_EXACT_IN_SINGLE);
-        
-        // Params for Action
-        IV4Router.ExactInputSingleParams memory params = IV4Router.ExactInputSingleParams({
-            poolKey: key,
-            zeroForOne: zeroForOne,
-            // forge-lint: disable-next-line(unsafe-typecast)
-            amountIn: uint128(amountIn),
-            // forge-lint: disable-next-line(unsafe-typecast)
-            amountOutMinimum: uint128(minAmountOut),
-            hookData: config.hookData
-        });
-        
-        bytes[] memory actionParams = new bytes[](1);
-        actionParams[0] = abi.encode(params);
+            IUniversalRouter(universalRouter).execute(abi.encodePacked(V4_SWAP), inputs, block.timestamp + 600);
+        }
 
-        // Final UniversalRouter Input
-        bytes memory commands = abi.encodePacked(V4_SWAP);
-        bytes[] memory inputs = new bytes[](1);
-        inputs[0] = abi.encode(actions, actionParams);
-
-        IUniversalRouter(universalRouter).execute(commands, inputs, block.timestamp + 600);
         amountOut = IERC20(tokenOut).balanceOf(address(this)) - balanceBefore;
     }
 
@@ -573,7 +571,6 @@ contract TokenSwapper is ISwapper, Ownable, ReentrancyGuard {
         uint256 amountIn,
         uint256 minAmountOut
     ) internal returns (uint256 amountOut) {
-        // Check if the first hop is V4
         bytes32 firstHopKey = _getPairKey(path[0], path[1]);
         if (directPools[firstHopKey].isActive) {
             return _executeV4MultiHopSwap(path, amountIn, minAmountOut);
@@ -581,6 +578,60 @@ contract TokenSwapper is ISwapper, Ownable, ReentrancyGuard {
             return _executeV3MultiHopSwap(path, amountIn, minAmountOut);
         }
         revert NoRouteFound();
+    }
+
+    function _executeV4MultiHopSwap(
+        address[] memory path,
+        uint256 amountIn,
+        uint256 minAmountOut
+    ) internal returns (uint256 amountOut) {
+        address tokenIn = path[0];
+        address tokenOut = path[path.length - 1];
+        
+        IERC20(tokenIn).forceApprove(universalRouter, amountIn);
+        uint256 balanceBefore = IERC20(tokenOut).balanceOf(address(this));
+
+        {
+            if (amountIn > type(uint128).max || minAmountOut > type(uint128).max) revert SlippageExceeded();
+
+            bytes memory actions = abi.encodePacked(
+                V4_ACTION_SETTLE,
+                V4_ACTION_SWAP_EXACT_IN,
+                V4_ACTION_TAKE
+            );
+            
+            IV4Router.PathKey[] memory pathKeys = new IV4Router.PathKey[](path.length - 1);
+            for (uint256 i = 0; i < path.length - 1; i++) {
+                bytes32 key = _getPairKey(path[i], path[i+1]);
+                PoolConfig memory config = directPools[key];
+                if (!config.isActive) revert PoolNotActive();
+                
+                pathKeys[i] = IV4Router.PathKey({
+                    intermediateCurrency: Currency.wrap(path[i+1]),
+                    fee: config.fee,
+                    tickSpacing: config.tickSpacing,
+                    hooks: config.hooks,
+                    hookData: config.hookData
+                });
+            }
+
+            bytes[] memory actionParams = new bytes[](3);
+            actionParams[0] = abi.encode(tokenIn, amountIn, true);
+            actionParams[1] = abi.encode(IV4Router.ExactInputParams({
+                currencyIn: Currency.wrap(tokenIn),
+                path: pathKeys,
+                amountIn: uint128(amountIn),
+                amountOutMinimum: uint128(minAmountOut)
+            }));
+            actionParams[2] = abi.encode(tokenOut, address(this), minAmountOut);
+
+            bytes[] memory inputs = new bytes[](1);
+            inputs[0] = abi.encode(actions, actionParams);
+
+            IUniversalRouter(universalRouter).execute(abi.encodePacked(V4_SWAP), inputs, block.timestamp + 600);
+        }
+
+        amountOut = IERC20(tokenOut).balanceOf(address(this)) - balanceBefore;
     }
 
     function _executeV3MultiHopSwap(
@@ -617,64 +668,6 @@ contract TokenSwapper is ISwapper, Ownable, ReentrancyGuard {
         }
         amountOut = currentAmount;
     }
-
-    function _executeV4MultiHopSwap(
-        address[] memory path,
-        uint256 amountIn,
-        uint256 minAmountOut
-    ) internal returns (uint256 amountOut) {
-        if (universalRouter == address(0)) return amountIn;
-        
-        uint256 pathLength = path.length;
-        if (pathLength < 2) revert NoRouteFound();
-
-        IV4Router.PathKey[] memory pathKeys = new IV4Router.PathKey[](pathLength - 1);
-        
-        for (uint256 i = 0; i < pathLength - 1; i++) {
-            address tokenA = path[i];
-            address tokenB = path[i+1];
-            bytes32 pairKey = _getPairKey(tokenA, tokenB); 
-            PoolConfig memory config = directPools[pairKey];
-            
-            if (!config.isActive) revert PoolNotActive();
-            
-            pathKeys[i] = IV4Router.PathKey({
-                intermediateCurrency: Currency.wrap(tokenB),
-                fee: config.fee,
-                tickSpacing: config.tickSpacing,
-                hooks: config.hooks,
-                hookData: config.hookData
-            });
-        }
-
-        IERC20(path[0]).forceApprove(universalRouter, amountIn);
-        uint256 balanceBefore = IERC20(path[pathLength-1]).balanceOf(address(this));
-
-        IV4Router.ExactInputParams memory params = IV4Router.ExactInputParams({
-            currencyIn: Currency.wrap(path[0]),
-            path: pathKeys,
-            // forge-lint: disable-next-line(unsafe-typecast)
-            amountIn: uint128(amountIn),
-            // forge-lint: disable-next-line(unsafe-typecast)
-            amountOutMinimum: uint128(minAmountOut)
-        });
-
-        bytes memory actions = abi.encodePacked(V4_ACTION_SWAP_EXACT_IN);
-        bytes[] memory actionParams = new bytes[](1);
-        actionParams[0] = abi.encode(params);
-        
-        bytes memory commands = abi.encodePacked(V4_SWAP); // 0x10
-        bytes[] memory inputs = new bytes[](1);
-        inputs[0] = abi.encode(actions, actionParams);
-
-        IUniversalRouter(universalRouter).execute(commands, inputs, block.timestamp + 600);
-        amountOut = IERC20(path[pathLength-1]).balanceOf(address(this)) - balanceBefore;
-    }
-
-
-
-
-    /// @notice Simulate a swap to get expected output
     function getRealQuote(
         address tokenIn,
         address tokenOut,
