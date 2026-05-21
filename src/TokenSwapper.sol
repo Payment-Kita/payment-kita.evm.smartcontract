@@ -668,11 +668,12 @@ contract TokenSwapper is ISwapper, Ownable, ReentrancyGuard {
         }
         amountOut = currentAmount;
     }
+    
     function getRealQuote(
         address tokenIn,
         address tokenOut,
         uint256 amountIn
-    ) external returns (uint256 amountOut) {
+    ) external virtual returns (uint256 amountOut) {
         (bool exists, /*bool isDirect*/, address[] memory path) = findRoute(tokenIn, tokenOut);
         if (!exists) revert NoRouteFound();
 

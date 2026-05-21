@@ -7,6 +7,8 @@ import "../src/PaymentKitaRouter.sol";
 import "../src/PaymentKitaGateway.sol";
 import "../src/TokenRegistry.sol";
 import "../src/TokenSwapper.sol";
+import "../src/TokenSwapperV3.sol";
+import "../src/integrations/okx/OKXDexAdapter.sol";
 import "../src/integrations/ccip/CCIPSender.sol";
 import "../src/integrations/ccip/CCIPReceiver.sol";
 import "../src/integrations/hyperbridge/HyperbridgeSender.sol";
