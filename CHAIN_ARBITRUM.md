@@ -1,7 +1,7 @@
 # CHAIN ARBITRUM
-Last updated: 2026-03-20 04:10 UTC
+Last updated: 2026-03-29 12:00 UTC
 Deployment method: `make deploy-arbitrum-verify`
-Status: final runtime active; latest gateway patch live and verified; latest Stargate sender/receiver live and verified; Stargate cross-token canary final pass
+Status: final runtime active; latest gateway patch live and verified; latest Stargate sender/receiver live and verified; Stargate cross-token canary final pass; **OKX DEX Adapter deployed & verified**
 Authoritative runtime state is listed in the top sections of this file; lower sections retain historical rollout notes where relevant.
 
 ## Core Contracts (V2 Modular)
@@ -27,6 +27,15 @@ FeePolicyManager: `0x5bd6093f455534dfd5c0220f5ba6660d5dbb30a8`
   - **Deployed**: 2026-03-19 (Redeployed to fix verification + V4 pool config)
   - **Wiring Status**: ✅ Gateway → Vault → Swapper all connected
   - **Old Address**: `0x0B482Cc728A9AAf9BfBFDD24247B181aF0238295` (deprecated, unverified, DO NOT USE)
+
+## OKX DEX Integration (NEW - 2026-03-29)
+OKXDexAdapter deployed at: `0xa60A1DB6b4E6F8836Cc9Ee2cad15b55B473d24F3` ✅ Verified
+OKX Router: `0x368E01160C2244B0363a35B3fF0A971E44a89284` (from official OKX documentation)
+TokenSwapper: `0xD12200745Fbb85f37F439DC81F5a649FF131C675` (existing)
+Gateway: `0x256F96f965eb536E0d6684b0BC52a300663f505a` (existing)
+Deployment Status: ✅ Deployed & Verified
+Verification URL: https://arbiscan.io/address/0xa60a1db6b4e6f8836cc9ee2cad15b55b473d24f3
+
 CCIPSender: `0x5cce8cdfb77dccd28ed7cf0acf567f92d737abd9`
 CCIPReceiverAdapter: `0x2eF4D58457247A2e2cdB901bc0133EE3d434C657`
 HyperbridgeSender: `0x7Fb1C521937eCEeBE9E86085d7F43A0Cdd36aFDA`

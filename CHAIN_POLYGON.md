@@ -1,7 +1,7 @@
 # CHAIN POLYGON
-Last updated: 2026-03-20 04:10 UTC
+Last updated: 2026-03-29 12:00 UTC
 Deployment method: `make deploy-polygon-verify-fallback` (resume across RPC)
-Status: final runtime active; latest gateway patch live and verified; latest Stargate sender/receiver live and verified; Stargate cross-token canary final pass; legacy direct LayerZero deauthorized
+Status: final runtime active; latest gateway patch live and verified; latest Stargate sender/receiver live and verified; Stargate cross-token canary final pass; legacy direct LayerZero deauthorized; **OKX DEX Adapter deployed & verified**
 Authoritative runtime state is listed in the top sections of this file; lower sections retain historical rollout notes where relevant.
 
 ## Core Contracts (V2 Modular)
@@ -22,6 +22,15 @@ FeePolicyManager: `0x7700B7d551f6195F6C6a60AE0c7B8fA8e5eEF608`
 
 ## Swapper + Adapters
 TokenSwapper: `0xe50BDD9CA4289CfD675240B3A7294035655AF8d2`
+
+## OKX DEX Integration (NEW - 2026-03-29)
+OKXDexAdapter deployed at: `0x08409b0fa63b0bCEb4c4B49DBf286ff943b60011` ✅ Verified
+OKX Router: `0x057cFd839AA88994d1A8A8C6D336CF21550F05Ef` (from official OKX documentation)
+TokenSwapper: `0xe50BDD9CA4289CfD675240B3A7294035655AF8d2` (existing)
+Gateway: `0xC2Df6CbFeA8c00f7Dacf08B27124cC4fB72f3B69` (existing)
+Deployment Status: ✅ Deployed & Verified
+Verification URL: https://polygonscan.com/address/0x08409b0fa63b0bceb4c4b49dbf286ff943b60011
+
 CCIPSender: `0xccA8474dF6D534C6E5ddC928D108747E4C6fD65A`
 CCIPReceiverAdapter: `0x10892efc8621D5ecb1de83d2Fd89F36bb4FBC70d`
 HyperbridgeSender: `0xF44019b4f5B08dA0960087Ad4290a0376580Aed1`

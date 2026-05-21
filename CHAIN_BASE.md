@@ -1,6 +1,6 @@
 # CHAIN BASE
-Last updated: 2026-03-20 04:10 UTC
-Status: final runtime active; latest gateway patch live and verified; latest Stargate sender/receiver live and verified; Stargate cross-token canary final pass; legacy direct LayerZero deauthorized
+Last updated: 2026-03-29 12:00 UTC
+Status: final runtime active; latest gateway patch live and verified; latest Stargate sender/receiver live and verified; Stargate cross-token canary final pass; legacy direct LayerZero deauthorized; **OKX DEX Adapter deployed & verified**
 Authoritative runtime state is listed in the top sections of this file; lower sections retain historical rollout notes where relevant.
 
 # FINAL RUNTIME CONTRACTS
@@ -12,6 +12,14 @@ Previous active gateway: `0x08409b0fa63b0bCEb4c4B49DBf286ff943b60011`
 Older gateway: `0x3547cBE71Fe65e5325f27F411d1e85641BD196aC`
 Legacy gateway: `0xf0daa1a24556B68B4636FBE1c90dE326842A164C`
 TokenSwapper deployed at: `0x8B6c7770D4B8AaD2d600e0cf5df3Eea5Bc0EB0fe`
+
+## OKX DEX Integration (NEW - 2026-03-29)
+OKXDexAdapter deployed at: `0xf0126D8C70AC926797De60A5921F2b0b3d70dbc0` ✅ Verified
+OKX Router: `0x4409921Ae43a39a11D90F7B7F96cfd0B8093d9fC` (from official OKX documentation)
+TokenSwapper: `0x8B6c7770D4B8AaD2d600e0cf5df3Eea5Bc0EB0fe` (existing)
+Gateway: `0xc1d4Ed499417B560A5Df53bA5e2b1A54755Ce58C` (existing)
+Deployment Status: ✅ Deployed & Verified
+Verification URL: https://basescan.org/address/0xf0126d8c70ac926797de60a5921f2b0b3d70dbc0
 
 Gateway modules wired:
 - validator: `0xb7A893672189B46632109CC15De8986e2B8be1c6`
